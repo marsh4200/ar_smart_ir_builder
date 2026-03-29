@@ -1,0 +1,12 @@
+{
+  "domain": "ar_smart_ir_builder",
+  "name": "AR Smart IR Builder",
+  "version": "1.0.0",
+  "documentation": "https://github.com/marsh4200/ar_smart_ir_builder",
+  "issue_tracker": "https://github.com/marsh4200/ar_smart_ir_builder/issues",
+  "codeowners": ["@marsh4200"],
+  "config_flow": true,
+  "dependencies": ["frontend", "panel_custom"],
+  "requirements": [],
+  "iot_class": "local_push"
+}
