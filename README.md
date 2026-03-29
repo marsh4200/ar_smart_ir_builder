@@ -91,4 +91,4 @@ fan_low, fan_high
 
 ## 💬 Credits
 
-Developed by AR Smart Home (Pty) Ltd
+Developed by AR Smart Home 
