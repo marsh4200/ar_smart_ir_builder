@@ -231,7 +231,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=7",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=8",
                 }
             },
             require_admin=True,
