@@ -508,6 +508,22 @@ class ARSmartIRPanel extends HTMLElement {
         <button class="ir-btn ir-btn-primary" id="ir-new-profile">+ New profile</button>
       </div>
     </div>
+
+    <div class="ir-card" style="border-color:rgba(220,50,50,.2)">
+      <div class="ir-card-title" style="font-size:13px">Remove integration entry</div>
+      <div class="ir-card-desc" style="margin-bottom:12px">Permanently delete this Broadlink remote entry and all its profiles from Home Assistant. This cannot be undone.</div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <select id="ir-delete-entry-select" class="ir-remote-select" style="flex:1;min-width:180px"></select>
+        <button class="ir-btn ir-btn-danger" id="ir-delete-entry-btn">Delete entry</button>
+      </div>
+      <div id="ir-delete-entry-confirm" class="ir-delete-confirm">
+        <p>Delete <strong id="ir-delete-entry-name"></strong>? All profiles and learned commands for this remote will be permanently removed.</p>
+        <div class="ir-actions" style="margin-top:0">
+          <button class="ir-btn ir-btn-danger ir-btn-sm" id="ir-delete-entry-confirm-btn">Yes, delete permanently</button>
+          <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-delete-entry-cancel-btn">Cancel</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ── Step 2: Profile details ── -->
@@ -679,6 +695,13 @@ class ARSmartIRPanel extends HTMLElement {
     this.qs("#ir-delete-cancel-btn").onclick = () => {
       this.qs("#ir-delete-confirm").classList.remove("show");
     };
+
+    // Delete integration entry
+    this.qs("#ir-delete-entry-btn").onclick = () => this._showDeleteEntryConfirm();
+    this.qs("#ir-delete-entry-confirm-btn").onclick = () => this._deleteEntry();
+    this.qs("#ir-delete-entry-cancel-btn").onclick = () => {
+      this.qs("#ir-delete-entry-confirm").classList.remove("show");
+    };
   }
 
   // ─── Navigation ──────────────────────────────────────────────────────────
@@ -730,6 +753,18 @@ class ARSmartIRPanel extends HTMLElement {
       sel.add(opt);
     });
     if (prev && this._data.entries.some(e => e.entry_id === prev)) sel.value = prev;
+
+    // Also populate the delete-entry selector on step 1
+    const delSel = this.qs("#ir-delete-entry-select");
+    if (delSel) {
+      delSel.innerHTML = "";
+      (this._data.entries || []).forEach(e => {
+        const opt = document.createElement("option");
+        opt.value = e.entry_id;
+        opt.text = e.remote_entity || e.title;
+        delSel.add(opt);
+      });
+    }
   }
 
   _renderProfileList() {
@@ -901,16 +936,18 @@ class ARSmartIRPanel extends HTMLElement {
   async _deleteProfile() {
     const key = this._currentKey;
     if (!key) return;
-    const entryId = this.qs("#ir-entry").value;
-    if (!entryId) { this._showCallout("No remote entry selected.", "error"); return; }
+    this.qs("#ir-delete-confirm").classList.remove("show");
     await this._run(async () => {
-      // Delete by saving an empty overlay — backend doesn't expose delete via HTTP yet,
-      // so we use the HA service call workaround via developer tools.
-      // For now we call save_device with empty commands to mark as cleared,
-      // and note that full delete needs the backend delete_device method.
-      // We expose the limitation honestly.
-      this._showCallout("Profile deletion requires calling the backend directly. Use Developer Tools → Services → ar_smart_ir_builder.delete_device if available, or remove the entry and re-add.", "info");
-      this.qs("#ir-delete-confirm").classList.remove("show");
+      await this._hass.callService("ar_smart_ir_builder", "delete_device", {
+        device_key: key,
+        entry_id: this.qs("#ir-entry").value || undefined,
+      });
+      this._currentKey = "";
+      await this._load();
+      this._renderProfileList();
+      this._startNew();
+      this._showCallout(`Profile "${key}" deleted.`, "success");
+      this._setStep(1);
     });
   }
 
@@ -1080,6 +1117,35 @@ class ARSmartIRPanel extends HTMLElement {
     this.querySelectorAll(".ir-btn").forEach(btn => {
       if (btn.id === "ir-open-integrations" || btn.id === "ir-retry") return;
       btn.disabled = on;
+    });
+  }
+
+  // ─── Delete integration entry ─────────────────────────────────────────────
+
+  _showDeleteEntryConfirm() {
+    const sel = this.qs("#ir-delete-entry-select");
+    const entryId = sel?.value;
+    if (!entryId) return;
+    const entry = (this._data.entries || []).find(e => e.entry_id === entryId);
+    const label = entry ? (entry.remote_entity || entry.title) : entryId;
+    this.qs("#ir-delete-entry-name").textContent = label;
+    this.qs("#ir-delete-entry-confirm").classList.add("show");
+  }
+
+  async _deleteEntry() {
+    const sel = this.qs("#ir-delete-entry-select");
+    const entryId = sel?.value;
+    if (!entryId) return;
+    this.qs("#ir-delete-entry-confirm").classList.remove("show");
+
+    await this._run(async () => {
+      // Call HA's config entries REST API directly — works regardless of entry state
+      await this._hass.callApi("DELETE", `config/config_entries/${entryId}`);
+      this._currentKey = "";
+      this._startNew();
+      // Reload data — entry should be gone now
+      await this._load();
+      this._showCallout("Integration entry deleted.", "success");
     });
   }
 
