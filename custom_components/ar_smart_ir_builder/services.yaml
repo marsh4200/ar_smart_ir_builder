@@ -84,3 +84,16 @@ export_device:
       required: true
       selector:
         text:
+
+delete_device:
+  name: Delete device
+  description: Permanently delete a saved device profile and all its learned commands.
+  fields:
+    device_key:
+      required: true
+      selector:
+        text:
+    entry_id:
+      required: false
+      selector:
+        text:

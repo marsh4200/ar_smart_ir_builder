@@ -48,6 +48,13 @@ EXPORT_SCHEMA = vol.Schema(
     }
 )
 
+DELETE_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_key"): cv.string,
+        vol.Optional("entry_id"): cv.string,
+    }
+)
+
 SAVE_SCHEMA = vol.Schema(
     {
         vol.Required("device_key"): cv.string,
@@ -70,15 +77,41 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
-    await _async_ensure_initialized(hass)
+    try:
+        await _async_ensure_initialized(hass)
+    except Exception:
+        pass  # Always continue — a failed init should not block Delete in the UI
+
     if CONF_DEVICES not in entry.options:
         hass.config_entries.async_update_entry(entry, options={**entry.options, CONF_DEVICES: {}})
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        pass  # Entity setup failure must not mark entry as failed/unavailable
+
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry) -> bool:
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry) -> None:
+    """Clean up when a config entry is deleted from the UI."""
+    # Unload platforms first so entities are properly removed from the entity registry
+    try:
+        await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    except Exception:
+        pass
+
+    # Wipe all devices belonging to this entry from the in-memory store
+    domain_data = hass.data.get(DOMAIN, {})
+    store: ARSmartIRStore | None = domain_data.get(DATA_STORE)
+    if store is not None:
+        for device_key, device in list(store.data.get("devices", {}).items()):
+            if device.get("entry_id") == entry.entry_id:
+                store.data.setdefault("devices", {}).pop(device_key, None)
 
 
 async def _async_ensure_initialized(hass: HomeAssistant) -> None:
@@ -231,7 +264,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=8",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=14",
                 }
             },
             require_admin=True,
@@ -344,8 +377,28 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=LEARN_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
+    async def delete_device(call: ServiceCall) -> None:
+        store: ARSmartIRStore = hass.data[DOMAIN][DATA_STORE]
+        device_key = call.data["device_key"]
+        entry_id = call.data.get("entry_id")
+        if not entry_id:
+            existing = store.get_device(device_key)
+            if existing:
+                entry_id = existing.get("entry_id")
+        if not entry_id:
+            raise HomeAssistantError(
+                f"Cannot delete '{device_key}': entry_id not found."
+            )
+        entry = await _async_get_entry(hass, entry_id)
+        deleted = await store.delete_device(entry, device_key)
+        if not deleted:
+            raise HomeAssistantError(f"Profile '{device_key}' not found.")
+        await store.async_save()
+        async_dispatcher_send(hass, SIGNAL_DEVICES_UPDATED)
+
     hass.services.async_register(DOMAIN, "save_device", save_device, schema=SAVE_SCHEMA)
     hass.services.async_register(DOMAIN, "export_device", export, schema=EXPORT_SCHEMA)
+    hass.services.async_register(DOMAIN, "delete_device", delete_device, schema=DELETE_SCHEMA)
 
 
 def _extract_command_candidates(value: Any) -> list[str]:

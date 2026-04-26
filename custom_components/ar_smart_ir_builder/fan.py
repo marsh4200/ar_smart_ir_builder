@@ -9,6 +9,8 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from homeassistant.helpers import device_registry as dr
+
 from .const import DATA_STORE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_remote_entity
 from .storage import ARSmartIRStore, normalize_device
 
@@ -53,6 +55,29 @@ async def async_setup_entry(
 
     sync_entities()
     entry.async_on_unload(async_dispatcher_connect(hass, SIGNAL_DEVICES_UPDATED, sync_entities))
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, config_entry: ConfigEntry, device_entry: dr.DeviceEntry
+) -> bool:
+    """Allow removing a device (profile) from the UI three-dot menu."""
+    from homeassistant.helpers.dispatcher import async_dispatcher_send
+    store: ARSmartIRStore = hass.data[DOMAIN][DATA_STORE]
+    for identifier in device_entry.identifiers:
+        if identifier[0] != DOMAIN:
+            continue
+        unique_id = identifier[1]
+        # fan unique_id format: {entry_id}_{device_key}_fan
+        prefix = config_entry.entry_id + "_"
+        suffix = "_fan"
+        if unique_id.startswith(prefix) and unique_id.endswith(suffix):
+            device_key = unique_id[len(prefix):-len(suffix)]
+            deleted = await store.delete_device(config_entry, device_key)
+            if deleted:
+                await store.async_save()
+                async_dispatcher_send(hass, SIGNAL_DEVICES_UPDATED)
+            return True
+    return False
 
 
 def _is_fan_profile(profile: dict[str, Any]) -> bool:
