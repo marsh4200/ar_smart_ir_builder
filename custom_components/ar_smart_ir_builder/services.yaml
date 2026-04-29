@@ -77,10 +77,36 @@ save_device:
         object:
 
 export_device:
-  name: Export device
+  name: Export SmartIR JSON
   description: Export a saved device profile as a SmartIR-style JSON file into /config/www/ar_smart_ir_exports.
   fields:
     device_key:
+      required: true
+      selector:
+        text:
+
+export_ha_scripts:
+  name: Export HA scripts
+  description: Export a saved device profile as Home Assistant script YAML into /config/www/ar_smart_ir_exports.
+  fields:
+    device_key:
+      required: true
+      selector:
+        text:
+
+test_command:
+  name: Test command
+  description: Fire a single learned command from a saved profile immediately via the Broadlink remote.
+  fields:
+    entry_id:
+      required: true
+      selector:
+        text:
+    device_key:
+      required: true
+      selector:
+        text:
+    command_name:
       required: true
       selector:
         text:

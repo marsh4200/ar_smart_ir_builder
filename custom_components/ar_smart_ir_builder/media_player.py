@@ -15,6 +15,23 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import entity_registry as er
+
+
+async def _async_remove_entity(hass: HomeAssistant, entity) -> None:
+    """Remove entity from state machine, entity registry, and device registry."""
+    entity_reg = er.async_get(hass)
+    device_reg = dr.async_get(hass)
+
+    if entity.registry_entry:
+        entity_reg.async_remove(entity.entity_id)
+    else:
+        await entity.async_remove()
+
+    if entity.device_entry:
+        remaining = er.async_entries_for_device(entity_reg, entity.device_entry.id, include_disabled_entities=True)
+        if not remaining:
+            device_reg.async_remove_device(entity.device_entry.id)
 
 from .const import DATA_STORE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_remote_entity
 from .storage import ARSmartIRStore, normalize_device
@@ -53,7 +70,7 @@ async def async_setup_entry(
             if device_key in desired:
                 continue
             entity = entities.pop(device_key)
-            hass.async_create_task(entity.async_remove())
+            hass.async_create_task(_async_remove_entity(hass, entity))
 
         if new_entities:
             async_add_entities(new_entities)
