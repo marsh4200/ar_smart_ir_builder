@@ -677,13 +677,44 @@ class ARSmartIRPanel extends HTMLElement {
           <datalist id="ir-cmd-list"></datalist>
         </div>
         <button class="ir-btn ir-btn-primary" id="ir-learn-btn" style="flex-shrink:0;margin-bottom:0">Learn</button>
+        <button class="ir-btn ir-btn-secondary" id="ir-paste-btn" style="flex-shrink:0;margin-bottom:0" title="Paste a Base64 code instead of capturing">Paste code</button>
+      </div>
+
+      <div id="ir-paste-card" class="ir-callout" style="display:none;margin-top:8px">
+        <div style="font-weight:600;margin-bottom:6px">Paste Base64 code for "<span id="ir-paste-cmd-label">—</span>"</div>
+        <div style="font-size:12px;color:var(--secondary-text-color);margin-bottom:8px">
+          Paste the Broadlink Base64 string (typically starts with <code>JgB</code> for IR or <code>sgB</code> for RF).
+        </div>
+        <textarea id="ir-paste-input" rows="4" style="width:100%;font-family:monospace;font-size:12px;padding:8px;box-sizing:border-box;border:1px solid var(--divider-color);border-radius:6px;resize:vertical" placeholder="JgBQAAAB..."></textarea>
+        <div class="ir-actions" style="margin-top:8px">
+          <button class="ir-btn ir-btn-primary ir-btn-sm" id="ir-paste-save-btn">Save code</button>
+          <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-paste-cancel-btn">Cancel</button>
+        </div>
       </div>
 
       <div id="ir-pill-container"></div>
 
       <div class="ir-actions" style="margin-top:20px">
         <button class="ir-btn ir-btn-secondary" id="ir-back-to-2">← Details</button>
-        <button class="ir-btn ir-btn-ghost" id="ir-to-test">Test remote →</button>
+        <button class="ir-btn ir-btn-ghost" id="ir-bulk-import-btn">Bulk import…</button>
+        <button class="ir-btn ir-btn-ghost" id="ir-to-test" style="margin-left:auto">Test remote →</button>
+      </div>
+
+      <div id="ir-bulk-import-modal" class="ir-delete-confirm" style="display:none">
+        <p style="font-weight:600;margin-bottom:4px">Bulk import codes</p>
+        <p style="font-size:12px;color:var(--secondary-text-color);margin-top:0">
+          Paste a JSON object mapping command names to Base64 codes. Existing commands with the same name will be overwritten.
+        </p>
+        <textarea id="ir-bulk-input" rows="8" style="width:100%;font-family:monospace;font-size:12px;padding:8px;box-sizing:border-box;border:1px solid var(--divider-color);border-radius:6px;resize:vertical" placeholder='{
+  "power": "JgBQAAAB...",
+  "volume_up": "JgBQAAAB...",
+  "volume_down": "JgBQAAAB..."
+}'></textarea>
+        <div id="ir-bulk-feedback" style="font-size:12px;margin-top:6px;min-height:16px"></div>
+        <div class="ir-actions" style="margin-top:8px">
+          <button class="ir-btn ir-btn-primary ir-btn-sm" id="ir-bulk-import-confirm-btn">Import codes</button>
+          <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-bulk-import-cancel-btn">Cancel</button>
+        </div>
       </div>
     </div>
   </div>
@@ -797,6 +828,12 @@ class ARSmartIRPanel extends HTMLElement {
 
     // Step 3
     this.qs("#ir-learn-btn").onclick = () => this._learnCommand();
+    this.qs("#ir-paste-btn").onclick = () => this._showPasteCard();
+    this.qs("#ir-paste-save-btn").onclick = () => this._savePastedCode();
+    this.qs("#ir-paste-cancel-btn").onclick = () => this._hidePasteCard();
+    this.qs("#ir-bulk-import-btn").onclick = () => this._showBulkImport();
+    this.qs("#ir-bulk-import-confirm-btn").onclick = () => this._runBulkImport();
+    this.qs("#ir-bulk-import-cancel-btn").onclick = () => this._hideBulkImport();
     this.qs("#ir-back-to-2").onclick = () => this._setStep(2);
     this.qs("#ir-to-test").onclick = () => this._setStep(4);
     this.qs("#ir-cmd").addEventListener("keydown", e => { if (e.key === "Enter") this._learnCommand(); });
@@ -1010,6 +1047,175 @@ class ARSmartIRPanel extends HTMLElement {
     btn.innerHTML = on ? `<span class="ir-spinner"></span>Learning…` : "Learn";
   }
 
+  // ── Paste single code ─────────────────────────────────────────────────────
+  _isLikelyBase64(s) {
+    if (typeof s !== "string") return false;
+    const trimmed = s.trim();
+    if (trimmed.length < 16) return false;
+    // Standard + URL-safe base64, optional padding. Whitespace not allowed mid-string.
+    if (!/^[A-Za-z0-9+/_\-]+={0,2}$/.test(trimmed)) return false;
+    return true;
+  }
+
+  _showPasteCard() {
+    const cmdName = this.qs("#ir-cmd").value.trim();
+    if (!cmdName) {
+      this._showLearnCallout("Enter a command name first, then click Paste code.", "error");
+      return;
+    }
+    if (!this._currentKey) {
+      this._showCallout("Save a profile first.", "error");
+      this._setStep(2);
+      return;
+    }
+    this.qs("#ir-paste-cmd-label").textContent = cmdName;
+    this.qs("#ir-paste-input").value = "";
+    this.qs("#ir-paste-card").style.display = "block";
+    this.qs("#ir-paste-input").focus();
+  }
+
+  _hidePasteCard() {
+    this.qs("#ir-paste-card").style.display = "none";
+    this.qs("#ir-paste-input").value = "";
+  }
+
+  async _savePastedCode() {
+    const cmdName = this.qs("#ir-cmd").value.trim();
+    const code = this.qs("#ir-paste-input").value.trim();
+    const key = this._currentKey;
+    const entryId = this.qs("#ir-entry").value;
+
+    if (!cmdName) { this._showLearnCallout("Command name is empty.", "error"); return; }
+    if (!key) { this._showCallout("Save a profile first.", "error"); this._setStep(2); return; }
+    if (!entryId) { this._showCallout("Select a remote entry.", "error"); return; }
+    if (!code) { this._showLearnCallout("Paste a Base64 code first.", "error"); return; }
+    if (!this._isLikelyBase64(code)) {
+      this._showLearnCallout("That doesn't look like a valid Base64 code. Check for spaces, line breaks, or missing characters.", "error");
+      return;
+    }
+
+    await this._run(async () => {
+      // Merge the pasted code into the existing commands and save.
+      const existing = this._data.store?.devices?.[key] || {};
+      const mergedCommands = { ...(existing.commands || {}), [cmdName]: code };
+      const payload = this._profilePayload();
+      payload.commands = mergedCommands;
+
+      await this._hass.callService("ar_smart_ir_builder", "save_device", payload);
+      await this._load();
+      this.qs("#ir-cmd").value = "";
+      this._hidePasteCard();
+      this._renderPills();
+      this._showLearnCallout(`✓ "${cmdName}" code saved.`, "success");
+    });
+  }
+
+  // ── Bulk import ───────────────────────────────────────────────────────────
+  _showBulkImport() {
+    if (!this._currentKey) {
+      this._showCallout("Save a profile first.", "error");
+      this._setStep(2);
+      return;
+    }
+    this.qs("#ir-bulk-input").value = "";
+    this.qs("#ir-bulk-feedback").textContent = "";
+    this.qs("#ir-bulk-feedback").style.color = "";
+    this.qs("#ir-bulk-import-modal").style.display = "block";
+    this.qs("#ir-bulk-input").focus();
+  }
+
+  _hideBulkImport() {
+    this.qs("#ir-bulk-import-modal").style.display = "none";
+    this.qs("#ir-bulk-input").value = "";
+    this.qs("#ir-bulk-feedback").textContent = "";
+  }
+
+  _parseBulkPayload(raw) {
+    // Accept either a raw {cmd: code} object, or a full SmartIR-style file with a "commands" field.
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      throw new Error(`Invalid JSON: ${e.message}`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("Expected a JSON object.");
+    }
+    let commands = parsed;
+    if (parsed.commands && typeof parsed.commands === "object" && !Array.isArray(parsed.commands)) {
+      commands = parsed.commands;
+    }
+
+    // Flatten one level: SmartIR climate files often nest commands by mode/temp/fan.
+    // We keep top-level string entries; if a value is an object we recurse and join keys with "_".
+    const out = {};
+    const walk = (prefix, obj) => {
+      for (const [k, v] of Object.entries(obj)) {
+        const name = prefix ? `${prefix}_${k}` : k;
+        if (typeof v === "string") {
+          out[name] = v.trim();
+        } else if (v && typeof v === "object" && !Array.isArray(v)) {
+          walk(name, v);
+        }
+        // ignore arrays/null/numbers
+      }
+    };
+    walk("", commands);
+    return out;
+  }
+
+  async _runBulkImport() {
+    const raw = this.qs("#ir-bulk-input").value.trim();
+    const feedback = this.qs("#ir-bulk-feedback");
+    const key = this._currentKey;
+    const entryId = this.qs("#ir-entry").value;
+
+    if (!raw) { feedback.style.color = "#c0392b"; feedback.textContent = "Paste a JSON object first."; return; }
+    if (!key) { this._showCallout("Save a profile first.", "error"); return; }
+    if (!entryId) { this._showCallout("Select a remote entry.", "error"); return; }
+
+    let imported;
+    try {
+      imported = this._parseBulkPayload(raw);
+    } catch (e) {
+      feedback.style.color = "#c0392b";
+      feedback.textContent = e.message;
+      return;
+    }
+
+    const valid = {};
+    const skipped = [];
+    for (const [name, code] of Object.entries(imported)) {
+      if (this._isLikelyBase64(code)) {
+        valid[name] = code;
+      } else {
+        skipped.push(name);
+      }
+    }
+
+    if (Object.keys(valid).length === 0) {
+      feedback.style.color = "#c0392b";
+      feedback.textContent = "No valid Base64 codes found in the input.";
+      return;
+    }
+
+    await this._run(async () => {
+      const existing = this._data.store?.devices?.[key] || {};
+      const mergedCommands = { ...(existing.commands || {}), ...valid };
+      const payload = this._profilePayload();
+      payload.commands = mergedCommands;
+
+      await this._hass.callService("ar_smart_ir_builder", "save_device", payload);
+      await this._load();
+      this._renderPills();
+      this._hideBulkImport();
+      const importedCount = Object.keys(valid).length;
+      let msg = `✓ Imported ${importedCount} command${importedCount === 1 ? "" : "s"}.`;
+      if (skipped.length) msg += ` Skipped (invalid): ${skipped.join(", ")}.`;
+      this._showLearnCallout(msg, "success");
+    });
+  }
+
   async _testCommandDirect(cmdName, btnEl) {
     const key = this._currentKey;
     const entryId = this.qs("#ir-entry").value;
@@ -1178,10 +1384,14 @@ class ARSmartIRPanel extends HTMLElement {
             row.style.borderColor = "transparent";
             row.style.background = "rgba(127,127,127,.07)";
           }, 1500);
-        } catch {
+        } catch (err) {
+          const msg = err?.body?.message || err?.message || (typeof err === "string" ? err : "Send failed");
           testBtn.textContent = "✗ Error";
+          testBtn.title = msg;
           testBtn.disabled = false;
           row.style.borderColor = "rgba(220,50,50,.4)";
+          const strip = this.qs("#ir-test-strip");
+          if (strip) { strip.className = "ir-test-strip err"; strip.textContent = `✗ ${msg}`; }
           setTimeout(() => {
             testBtn.textContent = "▶ Test";
             row.style.borderColor = "transparent";
