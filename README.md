@@ -2,87 +2,209 @@
 
 [![GitHub release](https://img.shields.io/github/v/release/marsh4200/ar_smart_ir_builder.svg)](https://github.com/marsh4200/ar_smart_ir_builder/releases)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Integration-blue.svg)](https://www.home-assistant.io/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+---
+
+## 📲 Quick Install (HACS)
 
 [![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=marsh4200&repository=ar_smart_ir_builder&category=integration)
+
 ---
 
 ## ✨ Overview
 
-**AR Smart IR Builder** is a modern Home Assistant integration that allows you to:
+**AR Smart IR Builder** is a powerful Home Assistant integration that allows you to:
 
-- Learn IR/RF commands directly from Broadlink
-- Build device profiles from scratch (UI only)
-- Automatically create working entities (Climate, Fan, Media Player)
-- Export devices to SmartIR-compatible JSON
-
-No YAML. Everything is done inside Home Assistant.
+- Learn IR / RF commands directly from Broadlink devices
+- Build full device profiles (TV, Aircon, Fan, Media, Custom)
+- Automatically generate Home Assistant entities
+- Export to SmartIR-compatible format
+- Manage everything 100% from the UI (no YAML)
 
 ---
 
-## 🔥 Key Features
+## 🔥 Features
 
-### 🎯 Full UI-Based Setup
-- Uses Config Flow
+### 🎯 UI First Setup
+- Fully Config Flow based
 - No YAML required
-- Easy setup via Devices & Services
+- Easy integration via Devices & Services
 
----
-
-### 📡 Built-in IR Learning (Broadlink)
-
-Service:
-ar_smart_ir_builder.learn_and_capture
-
----
+### 📡 IR Learning Engine
+- Learn IR commands in real time
+- Broadlink supported capture
+- Test commands instantly
 
 ### 🧠 Smart Device Builder
-
-Create devices with:
-- Manufacturer
-- Model
-- Device type
-- Command mappings
-
----
+Create structured device profiles:
+- ❄️ Aircons (Climate)
+- 📺 TVs (Media Player)
+- 🌬️ Fans
+- 🔊 Audio / Custom IR devices
 
 ### ⚡ Auto Entity Creation
+Automatically generates:
+- `climate.*`
+- `media_player.*`
+- `fan.*`
 
-- climate.*
-- fan.*
-- media_player.*
-
----
-
-### 💾 SmartIR Export
-
-Exports to:
+### 💾 SmartIR Export Support
+Export working IR configs to:
+```
 /config/www/ar_smart_ir_exports/
+```
 
 ---
 
-## ⚙️ How It Works
+## 🖼️ Screenshots
 
-1. Add integration
-2. Learn commands
-3. Save device
-4. Entities appear automatically
+### 📌 Integration Setup
+![Setup](https://via.placeholder.com/900x400?text=Integration+Setup)
+
+### 📌 Sidebar Tool
+![Sidebar](https://via.placeholder.com/900x400?text=AR+Smart+IR+Sidebar)
+
+### 📌 Device Builder
+![Builder](https://via.placeholder.com/900x400?text=Device+Profile+Builder)
+
+### 📌 IR Learning
+![Learning](https://via.placeholder.com/900x400?text=IR+Learning+Screen)
+
+---
+
+## ⚙️ Installation
+
+### 1. Install via HACS
+- Open **HACS**
+- Go to **Integrations**
+- Add repository:
+```
+https://github.com/marsh4200/ar_smart_ir_builder
+```
+- Install **AR Smart IR Builder**
+
+---
+
+### 2. Restart Home Assistant
+
+---
+
+### 3. Add Integration
+Go to:
+```
+Settings → Devices & Services → Add Integration
+```
+
+Search:
+```
+AR Smart IR Builder
+```
+
+---
+
+## 🧭 How to Use
+
+### Step 1 — Open Sidebar
+After installation, open:
+
+👉 **AR Smart IR Builder (Sidebar Menu)**
+
+---
+
+### Step 2 — Create Profile
+- Click **New Profile**
+- Enter:
+  - Name
+  - Manufacturer
+  - Model
+  - Type:
+    - Aircon
+    - TV
+    - Fan
+    - Media Player
+
+---
+
+### Step 3 — Learn Commands
+- Click **Learn Command**
+- Point remote at Broadlink
+- Capture commands like:
+  - Power
+  - Volume
+  - Input / HDMI
+  - Temperature
+  - Fan speed
+
+---
+
+### Step 4 — Save Device
+- Click **Save Device**
+- Entities are created automatically
+
+---
+
+### Step 5 — View in Home Assistant
+Check:
+- Developer Tools → States
+- Devices & Services
 
 ---
 
 ## 🧠 Command Naming
 
-Media:
-power, volume_up, play, source_hdmi1
+### Media
+```
+power
+volume_up
+volume_down
+play
+pause
+source_hdmi1
+```
 
-Climate:
-cool_24, heat_22, off
+### Aircon
+```
+cool_24
+heat_22
+fan_auto
+off
+```
 
-Fan:
-fan_low, fan_high
+### Fan
+```
+fan_low
+fan_medium
+fan_high
+```
 
 ---
 
-## 🧩 Services
+## 💾 Export
+
+Export location:
+```
+/config/www/ar_smart_ir_exports/
+```
+
+---
+
+## 🗑️ Delete Profile
+
+To remove a profile:
+
+1. Open sidebar
+2. Select profile
+3. Scroll to Export section
+4. Click **Delete Profile**
+5. Confirm
+
+✔ Removes from integration completely
+
+---
+
+## 🔌 Services
 
 - learn_and_capture
 - save_device
@@ -90,6 +212,12 @@ fan_low, fan_high
 
 ---
 
-## 💬 Credits
+## 👨‍💻 Credits
 
-Developed by AR Smart Home 
+Built by **AR Smart Home**
+
+---
+
+## ⚠️ Notes
+
+This project is actively developed. Features may evolve as new hardware is tested.
