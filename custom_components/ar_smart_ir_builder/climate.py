@@ -381,13 +381,13 @@ class ARSmartIRClimateEntity(ClimateEntity):
         await self._send_code(command_name)
 
     async def _send_code(self, command_name: str) -> None:
+        code = self._find_code(command_name)
+        if not code:
+            return
         await self.hass.services.async_call(
             "remote",
             "send_command",
-            {
-                "device": self._profile.get("broadlink_device") or self._device_key,
-                "command": command_name,
-            },
+            {"command": f"b64:{code}"},
             target={"entity_id": resolve_remote_entity(self._entry)},
             blocking=True,
         )

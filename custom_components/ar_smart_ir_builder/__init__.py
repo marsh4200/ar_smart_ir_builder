@@ -303,7 +303,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=20",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=22",
                 }
             },
             require_admin=True,
@@ -410,15 +410,19 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 f"Available: {', '.join(sorted(commands.keys())) or 'none'}"
             )
 
-        broadlink_device = device.get("broadlink_device") or device_key
+        # Send the raw Base64 code via Broadlink's b64: prefix. This works for
+        # both captured commands (already in Broadlink's storage) and codes that
+        # were pasted in manually (which Broadlink wouldn't otherwise know about).
+        code = commands[command_name]
+        if not isinstance(code, str) or not code:
+            raise HomeAssistantError(
+                f"Command '{command_name}' has no valid code stored."
+            )
 
         await hass.services.async_call(
             "remote",
             "send_command",
-            {
-                "device": broadlink_device,
-                "command": command_name,
-            },
+            {"command": f"b64:{code}"},
             target={"entity_id": remote},
             blocking=True,
         )
@@ -427,7 +431,6 @@ def _async_register_services(hass: HomeAssistant) -> None:
             "device_key": device_key,
             "command_name": command_name,
             "remote_entity": remote,
-            "broadlink_device": broadlink_device,
             "status": "sent",
         }
 

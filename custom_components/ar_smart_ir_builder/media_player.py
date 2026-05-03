@@ -352,15 +352,13 @@ class ARSmartIRMediaPlayerEntity(MediaPlayerEntity):
 
     async def _send_first(self, command_names: tuple[str, ...]) -> bool:
         for command_name in command_names:
-            if self._find_code(command_name) is None:
+            code = self._find_code(command_name)
+            if code is None:
                 continue
             await self.hass.services.async_call(
                 "remote",
                 "send_command",
-                {
-                    "device": self._profile.get("broadlink_device") or self._device_key,
-                    "command": command_name,
-                },
+                {"command": f"b64:{code}"},
                 target={"entity_id": resolve_remote_entity(self._entry)},
                 blocking=True,
             )
