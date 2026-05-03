@@ -61,7 +61,7 @@ Export working IR configs to:
 ## 🖼️ Screenshots
 
 ### 📌 Integration Setup
-![Setup](https://github.com/marsh4200/ar_smart_ir_builder/images/arbuilder1.png)
+![Setup](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder1.png)
 
 ### 📌 Sidebar Tool
 ![Sidebar](https://via.placeholder.com/900x400?text=AR+Smart+IR+Sidebar)
