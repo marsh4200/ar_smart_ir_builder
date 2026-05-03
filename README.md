@@ -64,13 +64,15 @@ Export working IR configs to:
 ![Setup](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder1.png)
 
 ### 📌 Sidebar Tool
-![Sidebar](https://via.placeholder.com/900x400?text=AR+Smart+IR+Sidebar)
+![Sidebar](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder2.png)
 
 ### 📌 Device Builder
-![Builder](https://via.placeholder.com/900x400?text=Device+Profile+Builder)
+![Builder](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder3.png)
 
 ### 📌 IR Learning
-![Learning](https://via.placeholder.com/900x400?text=IR+Learning+Screen)
+![Learning](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder4.png)
+
+![Learning](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder5.png)
 
 ---
 
