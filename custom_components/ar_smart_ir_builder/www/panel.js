@@ -419,6 +419,50 @@ class ARSmartIRPanel extends HTMLElement {
   .ir-delete-confirm.show { display: block; }
   .ir-delete-confirm p { font-size: 13px; margin-bottom: 10px; }
 
+  /* Repeat / Retry editor */
+  .ir-rep-empty {
+    font-size: 13px; color: var(--secondary-text-color);
+    padding: 10px 0 4px;
+  }
+  .ir-rep-row {
+    display: grid;
+    grid-template-columns: minmax(140px, 1.4fr) 78px 92px 70px 36px;
+    gap: 8px; align-items: center;
+    padding: 8px 10px; border-radius: 10px;
+    background: rgba(127,127,127,.06);
+    border: 1px solid rgba(127,127,127,.15);
+    margin-bottom: 6px;
+  }
+  .ir-rep-row.is-active {
+    background: rgba(26,153,107,.08);
+    border-color: rgba(26,153,107,.30);
+  }
+  .ir-rep-name {
+    font-size: 13px; font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ir-rep-row input[type="number"], .ir-rep-row select {
+    width: 100%; padding: 5px 6px; font-size: 13px; box-sizing: border-box;
+    border: 1px solid var(--divider-color); border-radius: 6px;
+    background: var(--card-background-color); color: var(--primary-text-color);
+  }
+  .ir-rep-clear {
+    background: transparent; border: none; cursor: pointer;
+    color: var(--secondary-text-color); font-size: 16px;
+    padding: 4px 6px; border-radius: 6px;
+  }
+  .ir-rep-clear:hover { background: rgba(220,50,50,.1); color: #c33; }
+  .ir-rep-add-row { display: flex; gap: 8px; align-items: flex-end; margin-top: 8px; }
+  .ir-rep-add-row .ir-field { flex: 1; margin-bottom: 0; }
+  .ir-rep-head {
+    display: grid;
+    grid-template-columns: minmax(140px, 1.4fr) 78px 92px 70px 36px;
+    gap: 8px;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--secondary-text-color);
+    padding: 0 10px 4px;
+  }
+
   /* Checklist */
   .ir-checklist { display: grid; gap: 6px; }
   .ir-cl-item {
@@ -694,6 +738,31 @@ class ARSmartIRPanel extends HTMLElement {
 
       <div id="ir-pill-container"></div>
 
+      <div class="ir-card" style="margin-top:18px;padding:14px 16px;background:rgba(127,127,127,.04);border:1px solid var(--divider-color)">
+        <div class="ir-card-title" style="font-size:15px">Repeat / Retry</div>
+        <div class="ir-card-desc" style="margin-bottom:10px">
+          Some IR receivers miss the first pulse, or need a double/triple press (e.g. power off, mute, source).
+          Set commands here to be sent more than once, with an optional delay between presses.
+          Commands not listed below send once (default).
+        </div>
+        <div id="ir-rep-list"></div>
+
+        <div class="ir-rep-add-row">
+          <div class="ir-field">
+            <label>Add command to repeat policy</label>
+            <select id="ir-rep-add-select">
+              <option value="">— Select a learned command —</option>
+            </select>
+          </div>
+          <button class="ir-btn ir-btn-secondary ir-btn-sm" id="ir-rep-add-btn" style="margin-bottom:0">Add</button>
+        </div>
+
+        <div class="ir-actions" style="margin-top:12px">
+          <button class="ir-btn ir-btn-primary ir-btn-sm" id="ir-rep-save-btn">Save repeat settings</button>
+          <span id="ir-rep-status" style="font-size:12px;color:var(--secondary-text-color);align-self:center"></span>
+        </div>
+      </div>
+
       <div class="ir-actions" style="margin-top:20px">
         <button class="ir-btn ir-btn-secondary" id="ir-back-to-2">← Details</button>
         <button class="ir-btn ir-btn-ghost" id="ir-bulk-import-btn">Bulk import…</button>
@@ -838,6 +907,10 @@ class ARSmartIRPanel extends HTMLElement {
     this.qs("#ir-to-test").onclick = () => this._setStep(4);
     this.qs("#ir-cmd").addEventListener("keydown", e => { if (e.key === "Enter") this._learnCommand(); });
 
+    // Step 3 — Repeat / Retry editor
+    this.qs("#ir-rep-add-btn").onclick = () => this._addRepeatRow();
+    this.qs("#ir-rep-save-btn").onclick = () => this._saveRepeatPolicy();
+
     // Step 4
     this.qs("#ir-back-to-3").onclick = () => this._setStep(3);
     this.qs("#ir-to-export").onclick = () => this._setStep(5);
@@ -865,7 +938,7 @@ class ARSmartIRPanel extends HTMLElement {
       panel.classList.toggle("active", Number(panel.dataset.panel) === this._step);
     });
     this._hideCallout();
-    if (this._step === 3) this._renderPills();
+    if (this._step === 3) { this._renderPills(); this._renderRepeatEditor(); }
     if (this._step === 4) this._renderTestRemote();
     if (this._step === 5) { this._renderChecklist(); this._renderRaw(); }
   }
@@ -1407,7 +1480,7 @@ class ARSmartIRPanel extends HTMLElement {
   // ── UI helpers ────────────────────────────────────────────────────────────
 
   _refreshDerivedUI() {
-    if (this._step === 3) this._renderPills();
+    if (this._step === 3) { this._renderPills(); this._renderRepeatEditor(); }
     if (this._step === 4) this._renderTestRemote();
     if (this._step === 5) { this._renderChecklist(); this._renderRaw(); }
   }
@@ -1452,6 +1525,9 @@ class ARSmartIRPanel extends HTMLElement {
     dl.innerHTML = "";
     new Set([...this._allRecommended(), ...Object.keys(COMMAND_HINTS), ...this._currentCommands()])
       .forEach(v => { const o = document.createElement("option"); o.value = v; dl.appendChild(o); });
+
+    // Keep the Repeat / Retry editor in sync with the current command list.
+    this._renderRepeatEditor();
   }
 
   _updateStats(learnedSet) {
@@ -1497,6 +1573,187 @@ class ARSmartIRPanel extends HTMLElement {
           Object.entries(cmds).map(([k, v]) => [k, typeof v === "string" && v.length > 32 ? v.slice(0, 32) + "…" : v])
         ), null, 2)
       : "No commands stored yet.";
+  }
+
+  // ── Repeat / Retry editor ─────────────────────────────────────────────────
+
+  /**
+   * Local working copy of the repeat policy for the currently-edited device.
+   * Shape: { [command_name]: { repeat: int, delay: number, delay_unit: 'ms'|'s' } }
+   * We keep edits here until the user clicks "Save repeat settings" so the
+   * backend isn't pinged on every keystroke.
+   */
+  _ensureRepeatBuffer() {
+    if (!this._repeatBuffer) this._repeatBuffer = {};
+    const key = this._currentKey || "";
+    if (this._repeatBufferKey !== key) {
+      // Switched to a different device — reload from store.
+      const saved = this._data.store?.devices?.[key]?.command_options || {};
+      // Deep-copy so edits don't mutate the cached store data.
+      this._repeatBuffer = JSON.parse(JSON.stringify(saved));
+      this._repeatBufferKey = key;
+    }
+    return this._repeatBuffer;
+  }
+
+  _renderRepeatEditor() {
+    const list = this.qs("#ir-rep-list");
+    const select = this.qs("#ir-rep-add-select");
+    const status = this.qs("#ir-rep-status");
+    if (!list || !select) return;
+    if (status) status.textContent = "";
+
+    const buffer = this._ensureRepeatBuffer();
+    const allCmds = this._currentCommands().sort();
+    const inPolicy = new Set(Object.keys(buffer));
+
+    // Clean out buffer entries for commands that no longer exist.
+    let cleaned = false;
+    Object.keys(buffer).forEach(name => {
+      if (!allCmds.includes(name)) { delete buffer[name]; cleaned = true; }
+    });
+    if (cleaned) inPolicy.clear(), Object.keys(buffer).forEach(n => inPolicy.add(n));
+
+    // Render rows.
+    list.innerHTML = "";
+    if (inPolicy.size === 0) {
+      const empty = document.createElement("div");
+      empty.className = "ir-rep-empty";
+      empty.textContent = allCmds.length === 0
+        ? "Learn some commands first, then come back to set repeat policies."
+        : "No repeat policies set. All commands send once.";
+      list.appendChild(empty);
+    } else {
+      const head = document.createElement("div");
+      head.className = "ir-rep-head";
+      head.innerHTML = `<div>Command</div><div>Repeat</div><div>Delay</div><div>Unit</div><div></div>`;
+      list.appendChild(head);
+
+      [...inPolicy].sort().forEach(cmdName => {
+        const opts = buffer[cmdName];
+        const row = document.createElement("div");
+        row.className = "ir-rep-row is-active";
+        row.dataset.cmd = cmdName;
+        row.innerHTML = `
+          <div class="ir-rep-name" title="${cmdName}">${cmdName}</div>
+          <input type="number" min="1" max="20" step="1" data-field="repeat" value="${opts.repeat}">
+          <input type="number" min="0" step="any" data-field="delay" value="${opts.delay}">
+          <select data-field="delay_unit">
+            <option value="ms"${opts.delay_unit === "ms" ? " selected" : ""}>ms</option>
+            <option value="s"${opts.delay_unit === "s" ? " selected" : ""}>sec</option>
+          </select>
+          <button type="button" class="ir-rep-clear" title="Remove from repeat policy">✕</button>
+        `;
+        row.querySelectorAll("input,select").forEach(input => {
+          input.addEventListener("change", () => this._captureRepeatRow(row));
+          input.addEventListener("input", () => this._captureRepeatRow(row));
+        });
+        row.querySelector(".ir-rep-clear").onclick = () => {
+          delete this._repeatBuffer[cmdName];
+          this._renderRepeatEditor();
+        };
+        list.appendChild(row);
+      });
+    }
+
+    // Populate the "Add command" dropdown with learned commands not yet in policy.
+    const addable = allCmds.filter(c => !inPolicy.has(c));
+    select.innerHTML = "";
+    if (addable.length === 0) {
+      const o = document.createElement("option");
+      o.value = "";
+      o.textContent = allCmds.length === 0
+        ? "— No commands learned yet —"
+        : "— All commands already have repeat policies —";
+      select.appendChild(o);
+      select.disabled = true;
+      if (this.qs("#ir-rep-add-btn")) this.qs("#ir-rep-add-btn").disabled = true;
+    } else {
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "— Select a learned command —";
+      select.appendChild(placeholder);
+      addable.forEach(c => {
+        const o = document.createElement("option");
+        o.value = c; o.textContent = c;
+        select.appendChild(o);
+      });
+      select.disabled = false;
+      if (this.qs("#ir-rep-add-btn")) this.qs("#ir-rep-add-btn").disabled = false;
+    }
+  }
+
+  _captureRepeatRow(row) {
+    const cmd = row.dataset.cmd;
+    if (!cmd || !this._repeatBuffer) return;
+    const repeatInput = row.querySelector('[data-field="repeat"]');
+    const delayInput = row.querySelector('[data-field="delay"]');
+    const unitSelect = row.querySelector('[data-field="delay_unit"]');
+    let repeat = parseInt(repeatInput.value, 10);
+    if (!Number.isFinite(repeat) || repeat < 1) repeat = 1;
+    if (repeat > 20) repeat = 20;
+    let delay = parseFloat(delayInput.value);
+    if (!Number.isFinite(delay) || delay < 0) delay = 0;
+    const unit = unitSelect.value === "s" ? "s" : "ms";
+    // Clamp delay so unit changes don't allow accidental 60-second waits.
+    const maxDelay = unit === "s" ? 60 : 60000;
+    if (delay > maxDelay) delay = maxDelay;
+    this._repeatBuffer[cmd] = { repeat, delay, delay_unit: unit };
+  }
+
+  _addRepeatRow() {
+    const select = this.qs("#ir-rep-add-select");
+    if (!select) return;
+    const cmd = select.value;
+    if (!cmd) return;
+    const buffer = this._ensureRepeatBuffer();
+    // Sensible defaults: repeat twice with 300ms gap — typical fix for missed pulses.
+    buffer[cmd] = { repeat: 2, delay: 300, delay_unit: "ms" };
+    select.value = "";
+    this._renderRepeatEditor();
+  }
+
+  async _saveRepeatPolicy() {
+    const key = this._currentKey;
+    if (!key) { this._showCallout("Save a profile first.", "error"); this._setStep(2); return; }
+    const entryId = this.qs("#ir-entry")?.value;
+    if (!entryId) { this._showCallout("Select a remote entry.", "error"); return; }
+
+    // Capture any in-flight edits from the DOM first.
+    this.qs("#ir-rep-list")?.querySelectorAll(".ir-rep-row").forEach(row =>
+      this._captureRepeatRow(row)
+    );
+
+    const buffer = this._ensureRepeatBuffer();
+    // Drop entries with repeat<=1 — those are no-ops, no need to persist.
+    const policy = {};
+    Object.entries(buffer).forEach(([cmd, opts]) => {
+      if (opts.repeat > 1) policy[cmd] = opts;
+    });
+
+    const status = this.qs("#ir-rep-status");
+    if (status) status.textContent = "Saving…";
+
+    await this._run(async () => {
+      await this._hass.callService("ar_smart_ir_builder", "save_device", {
+        device_key: key,
+        entry_id: entryId,
+        command_options: policy,
+      });
+      await this._load();
+      // Reset buffer to the freshly-saved state.
+      this._repeatBufferKey = null;
+      this._renderRepeatEditor();
+      if (status) {
+        const n = Object.keys(policy).length;
+        status.textContent = n === 0
+          ? "✓ No repeat policies — all commands send once."
+          : `✓ Saved repeat policy for ${n} command${n === 1 ? "" : "s"}.`;
+        setTimeout(() => { if (status) status.textContent = ""; }, 4000);
+      }
+    }, () => {
+      if (status) status.textContent = "";
+    });
   }
 
   // ── Setup guard ───────────────────────────────────────────────────────────
