@@ -75,6 +75,14 @@ save_device:
       required: false
       selector:
         object:
+    command_options:
+      required: false
+      description: >
+        Optional per-command repeat policy. Map of command_name → { repeat: int (1-20),
+        delay: number, delay_unit: "ms" or "s" }. Commands omitted from this dict
+        send once. Sending an empty dict clears all repeat policies for this device.
+      selector:
+        object:
 
 export_device:
   name: Export SmartIR JSON

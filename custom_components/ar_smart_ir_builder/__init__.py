@@ -66,6 +66,7 @@ SAVE_SCHEMA = vol.Schema(
         vol.Optional("supported_models"): [cv.string],
         vol.Optional("commands_encoding"): cv.string,
         vol.Optional("commands"): dict,
+        vol.Optional("command_options"): dict,
     },
     extra=vol.ALLOW_EXTRA,
 )

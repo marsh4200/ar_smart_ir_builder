@@ -28,7 +28,7 @@ async def _async_remove_entity(hass: HomeAssistant, entity) -> None:
         if not remaining:
             device_reg.async_remove_device(entity.device_entry.id)
 
-from .const import DATA_STORE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_remote_entity
+from .const import DATA_STORE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_remote_entity, send_with_policy
 from .storage import ARSmartIRStore, normalize_device
 
 FAN_DEVICE_TYPES = {"fan", "ceiling_fan", "pedestal_fan", "tower_fan"}
@@ -223,10 +223,10 @@ class ARSmartIRFanEntity(FanEntity):
         code = self._find_code(command_name)
         if not code:
             return
-        await self.hass.services.async_call(
-            "remote",
-            "send_command",
-            {"command": f"b64:{code}"},
-            target={"entity_id": resolve_remote_entity(self._entry)},
-            blocking=True,
+        await send_with_policy(
+            self.hass,
+            resolve_remote_entity(self._entry),
+            code,
+            self._profile,
+            command_name,
         )
