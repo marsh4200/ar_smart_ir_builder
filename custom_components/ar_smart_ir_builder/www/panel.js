@@ -182,6 +182,7 @@ class ARSmartIRPanel extends HTMLElement {
     this._step = 1;
     this._busy = false;
     this._currentKey = "";
+    this._learnMode = "ir";
     this._testFeedback = {};
   }
 
@@ -399,6 +400,21 @@ class ARSmartIRPanel extends HTMLElement {
   /* Learn row */
   .ir-cmd-row { display: flex; gap: 8px; align-items: flex-end; }
   .ir-cmd-row .ir-field { flex: 1; margin-bottom: 0; }
+
+  /* IR / RF mode toggle */
+  .ir-mode-seg {
+    display: inline-flex; border: 1px solid rgba(127,127,127,.25);
+    border-radius: 999px; overflow: hidden;
+  }
+  .ir-mode-seg button {
+    border: none; background: transparent; color: var(--secondary-text-color);
+    font-size: 12px; font-weight: 700; padding: 7px 18px; cursor: pointer;
+    transition: background .15s, color .15s; min-height: 32px;
+  }
+  .ir-mode-seg button + button { border-left: 1px solid rgba(127,127,127,.25); }
+  .ir-mode-seg button.active { background: var(--primary-color); color: #fff; }
+  .ir-mode-seg button:active { transform: scale(.97); }
+  .ir-mode-hint { font-size: 12px; color: var(--secondary-text-color); margin: 6px 0 12px; line-height: 1.45; }
 
   /* Spinner */
   .ir-spinner {
@@ -714,6 +730,15 @@ class ARSmartIRPanel extends HTMLElement {
       <div class="ir-cov-bar"><div class="ir-cov-fill" id="ir-cov-fill" style="width:0%"></div></div>
       <div id="ir-learn-callout" class="ir-callout" style="display:none"></div>
 
+      <div class="ir-field" style="margin-bottom:0">
+        <label>Capture mode</label>
+        <div class="ir-mode-seg" id="ir-mode-seg" role="group" aria-label="Capture mode">
+          <button type="button" id="ir-mode-ir" class="active" data-mode="ir">IR</button>
+          <button type="button" id="ir-mode-rf" data-mode="rf">RF</button>
+        </div>
+      </div>
+      <div class="ir-mode-hint" id="ir-mode-hint">Infrared capture — press the button on your remote once when prompted.</div>
+
       <div class="ir-cmd-row">
         <div class="ir-field">
           <label>Command name</label>
@@ -897,6 +922,8 @@ class ARSmartIRPanel extends HTMLElement {
 
     // Step 3
     this.qs("#ir-learn-btn").onclick = () => this._learnCommand();
+    this.qs("#ir-mode-ir").onclick = () => this._setLearnMode("ir");
+    this.qs("#ir-mode-rf").onclick = () => this._setLearnMode("rf");
     this.qs("#ir-paste-btn").onclick = () => this._showPasteCard();
     this.qs("#ir-paste-save-btn").onclick = () => this._savePastedCode();
     this.qs("#ir-paste-cancel-btn").onclick = () => this._hidePasteCard();
@@ -1091,27 +1118,45 @@ class ARSmartIRPanel extends HTMLElement {
     const cmdName = this.qs("#ir-cmd").value.trim();
     const entryId = this.qs("#ir-entry").value;
     const key = this._currentKey;
+    const mode = this._learnMode === "rf" ? "rf" : "ir";
     if (!cmdName) { this._showLearnCallout("Enter a command name first.", "error"); return; }
     if (!key) { this._showCallout("Save a profile first.", "error"); this._setStep(2); return; }
     if (!entryId) { this._showCallout("Select a remote entry.", "error"); return; }
     await this._run(async () => {
       await this._hass.callService("ar_smart_ir_builder", "save_device", this._profilePayload());
-      this._showLearnCallout(`⏳ Point remote at Broadlink and press the button for "${cmdName}"…`, "learning");
+      const prompt = mode === "rf"
+        ? `📡 RF sweep — press and HOLD a button on the remote, then tap it once to capture "${cmdName}"…`
+        : `⏳ Point remote at Broadlink and press the button for "${cmdName}"…`;
+      this._showLearnCallout(prompt, "learning");
       this._setLearning(true);
       await this._hass.callApi(
         "POST",
         "services/ar_smart_ir_builder/learn_and_capture?return_response",
-        { entry_id: entryId, device_key: key, command_name: cmdName }
+        { entry_id: entryId, device_key: key, command_name: cmdName, command_type: mode }
       );
       this._setLearning(false);
       await this._load();
       this.qs("#ir-cmd").value = "";
       this._renderPills();
-      this._showLearnCallout(`✓ "${cmdName}" learned successfully.`, "success");
+      this._showLearnCallout(`✓ "${cmdName}" learned successfully (${mode.toUpperCase()}).`, "success");
     }, () => {
       this._setLearning(false);
       this._showLearnCallout("", "");
     });
+  }
+
+  _setLearnMode(mode) {
+    this._learnMode = mode === "rf" ? "rf" : "ir";
+    const irBtn = this.qs("#ir-mode-ir");
+    const rfBtn = this.qs("#ir-mode-rf");
+    if (irBtn) irBtn.classList.toggle("active", this._learnMode === "ir");
+    if (rfBtn) rfBtn.classList.toggle("active", this._learnMode === "rf");
+    const hint = this.qs("#ir-mode-hint");
+    if (hint) {
+      hint.textContent = this._learnMode === "rf"
+        ? "RF capture (e.g. 433 MHz gates, blinds). Two steps: press and hold a button so the Broadlink finds the frequency, then tap it once to capture. Needs RF-capable hardware (RM Pro / RM4 Pro)."
+        : "Infrared capture — press the button on your remote once when prompted.";
+    }
   }
 
   _setLearning(on) {
