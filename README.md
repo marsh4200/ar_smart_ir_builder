@@ -19,7 +19,7 @@
 
 **AR Smart IR Builder** is a powerful Home Assistant integration that allows you to:
 
-- Learn IR / RF commands directly from Broadlink devices
+- Learn IR / RF commands from Broadlink devices, or IR commands from Tasmota IR blasters over MQTT
 - Build full device profiles (TV, Aircon, Fan, Media, Custom)
 - Automatically generate Home Assistant entities
 - Export to SmartIR-compatible format
@@ -33,10 +33,12 @@
 - Fully Config Flow based
 - No YAML required
 - Easy integration via Devices & Services
+- Pick your controller type during setup: **Broadlink** (remote entity) or **Tasmota IR** (MQTT)
 
 ### 📡 IR Learning Engine
 - Learn IR commands in real time
 - Broadlink supported capture
+- Tasmota IR supported capture (over MQTT, no Broadlink hardware required)
 - Test commands instantly
 
 ### 🧠 Smart Device Builder
@@ -105,6 +107,31 @@ Search:
 ```
 AR Smart IR Builder
 ```
+
+During setup you'll be asked to pick a **Controller type**:
+
+---
+
+## 📶 Controller Types
+
+### Broadlink
+The original mode. Pick a `remote.*` entity from the Broadlink integration. Sending uses `remote.send_command` with a base64 code; learning uses `remote.learn_command`.
+
+### Tasmota IR (MQTT) — for areas where Broadlink hardware is hard to source
+Talks straight to a Tasmota IR blaster over MQTT, no `remote.*` entity needed.
+
+**Requirements:**
+- A Tasmota device flashed with IR support (most ESP8266/ESP32-based IR blasters), with its **Topic** set under *Configuration → MQTT*
+- HA's built-in **MQTT integration** configured and pointed at the same broker your Tasmota device uses
+- For learning: IR receive enabled on the device (`SetOption58 1` on the Tasmota console if it's an unusual/AC protocol Tasmota can't natively decode, so it still returns raw timing data instead of nothing)
+
+**How it works:**
+- *Send*: publishes Tasmota's `IRSend` JSON (e.g. `{"Protocol":"NEC","Bits":32,"Data":"0x20DF10EF"}`) to `cmnd/<topic>/irsend`
+- *Learn*: subscribes to `tele/<topic>/RESULT`, waits up to 25s (configurable) for the next IR signal the device receives, and stores it ready to replay
+- *Paste code*: paste Tasmota IRSend JSON directly (e.g. copied straight out of the Tasmota console log) instead of capturing
+- RF capture, available on Broadlink, isn't supported through this path — Tasmota IR is IR-only here
+
+**Known limitation:** protocols Tasmota can't decode (common on some AC remotes) fall back to raw timing arrays, the same rough edge Broadlink has with exotic remotes — you may need to re-learn a couple of times to get a clean capture.
 
 ---
 
@@ -213,6 +240,9 @@ To remove a profile:
 - learn_and_capture
 - save_device
 - export_device
+- export_ha_scripts
+- test_command
+- delete_device
 
 ---
 
@@ -225,3 +255,5 @@ Built by **AR Smart Home**
 ## ⚠️ Notes
 
 This project is actively developed. Features may evolve as new hardware is tested.
+
+Tasmota IR (MQTT) controller support was added without access to physical Tasmota hardware to test against — the MQTT topics and IRSend/IrReceived payload shapes follow Tasmota's documented behaviour, but if your device's topic naming or firmware version diverges, you may need to adjust `mqtt_controller.py`. Report back what breaks.

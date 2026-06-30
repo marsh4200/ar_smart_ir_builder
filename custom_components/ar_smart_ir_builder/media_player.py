@@ -33,7 +33,7 @@ async def _async_remove_entity(hass: HomeAssistant, entity) -> None:
         if not remaining:
             device_reg.async_remove_device(entity.device_entry.id)
 
-from .const import DATA_STORE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_remote_entity, send_with_policy
+from .const import DATA_STORE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_controller_available, send_with_policy
 from .storage import ARSmartIRStore, normalize_device
 
 MEDIA_PLAYER_DEVICE_TYPES = {"media_player", "tv", "television"}
@@ -166,11 +166,7 @@ class ARSmartIRMediaPlayerEntity(MediaPlayerEntity):
 
     @property
     def available(self) -> bool:
-        remote_entity = resolve_remote_entity(self._entry)
-        if not remote_entity:
-            return False
-        state = self.hass.states.get(remote_entity)
-        return state is not None and state.state not in {"unavailable", "unknown"}
+        return resolve_controller_available(self.hass, self._entry)
 
     @property
     def state(self) -> MediaPlayerState | None:
@@ -357,7 +353,7 @@ class ARSmartIRMediaPlayerEntity(MediaPlayerEntity):
                 continue
             await send_with_policy(
                 self.hass,
-                resolve_remote_entity(self._entry),
+                self._entry,
                 code,
                 self._profile,
                 command_name,

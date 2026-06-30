@@ -3,11 +3,25 @@
     "step": {
       "user": {
         "title": "AR Smart IR Builder",
-        "description": "Choose the Broadlink remote entity this IR learner should use.",
+        "description": "Choose how this IR learner talks to your hardware.",
         "data": {
           "title": "Title",
           "device_key": "Builder key",
+          "controller_type": "Controller type"
+        }
+      },
+      "broadlink": {
+        "title": "Broadlink remote",
+        "description": "Choose the Broadlink (or other HA remote-domain) entity this builder should use.",
+        "data": {
           "remote_entity": "Remote entity"
+        }
+      },
+      "tasmota": {
+        "title": "Tasmota IR (MQTT)",
+        "description": "The Tasmota device's MQTT topic - whatever you set as 'Topic' under Configuration -> MQTT on the device. Commands are published to cmnd/<topic>/irsend.",
+        "data": {
+          "mqtt_base_topic": "MQTT base topic"
         }
       }
     },
@@ -19,8 +33,9 @@
         "title": "AR Smart IR Builder options",
         "data": {
           "title": "Title",
-          "device_key": "Builder key",
-          "remote_entity": "Remote entity"
+          "controller_type": "Controller type",
+          "remote_entity": "Remote entity (Broadlink)",
+          "mqtt_base_topic": "MQTT base topic (Tasmota)"
         }
       }
     }
@@ -28,7 +43,7 @@
   "services": {
     "learn_and_capture": {
       "name": "Learn and capture code",
-      "description": "Put the selected Broadlink remote into learn mode and save the captured code to this builder profile.",
+      "description": "Broadlink: puts the remote into learn mode and saves the captured code. Tasmota (MQTT): waits for the device's next IR receive event and saves it.",
       "fields": {
         "entry_id": {
           "name": "Entry"
@@ -47,6 +62,9 @@
         },
         "alternative": {
           "name": "Alternative learning mode"
+        },
+        "learn_timeout": {
+          "name": "Learn timeout (Tasmota)"
         }
       }
     },
@@ -57,6 +75,10 @@
     "export_device": {
       "name": "Export device",
       "description": "Export the saved profile as SmartIR-compatible JSON in /config/www/ar_smart_ir_exports."
+    },
+    "test_command": {
+      "name": "Test command",
+      "description": "Fire a single learned command immediately via the entry's controller (Broadlink remote or Tasmota MQTT)."
     }
   }
 }

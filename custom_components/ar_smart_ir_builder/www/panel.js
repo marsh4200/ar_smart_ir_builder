@@ -1,4 +1,4 @@
-// AR Smart IR Builder — panel.js v2.0.0
+// AR Smart IR Builder — panel.js v2.1.0
 // Full rebuild: test commands, HA script export, polished remote UI
 
 const RECOMMENDED = {
@@ -601,7 +601,7 @@ class ARSmartIRPanel extends HTMLElement {
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v2.0.0</div>
+      <div class="ir-version">v2.1.0</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -609,7 +609,7 @@ class ARSmartIRPanel extends HTMLElement {
   <!-- Setup guard -->
   <div id="ir-setup-guard" class="ir-setup-guard">
     <h2>Integration setup required</h2>
-    <p id="ir-setup-msg">Go to Settings → Devices &amp; Services and add the AR Smart IR Builder integration with at least one Broadlink remote.</p>
+    <p id="ir-setup-msg">Go to Settings → Devices &amp; Services and add the AR Smart IR Builder integration with at least one IR controller (Broadlink remote or Tasmota IR device).</p>
     <div class="ir-actions" style="justify-content:center">
       <button class="ir-btn ir-btn-primary" id="ir-open-integrations">Open integrations</button>
       <button class="ir-btn ir-btn-secondary" id="ir-retry">Retry</button>
@@ -651,7 +651,7 @@ class ARSmartIRPanel extends HTMLElement {
 
     <div class="ir-card" style="border-color:rgba(220,50,50,.2)">
       <div class="ir-card-title" style="font-size:13px">Remove integration entry</div>
-      <div class="ir-card-desc" style="margin-bottom:12px">Permanently delete a Broadlink remote entry and all its profiles. Cannot be undone.</div>
+      <div class="ir-card-desc" style="margin-bottom:12px">Permanently delete an IR controller entry and all its profiles. Cannot be undone.</div>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
         <select id="ir-delete-entry-select" class="ir-remote-select" style="flex:1;min-width:180px"></select>
         <button class="ir-btn ir-btn-danger" id="ir-delete-entry-btn">Delete entry</button>
@@ -751,7 +751,7 @@ class ARSmartIRPanel extends HTMLElement {
 
       <div id="ir-paste-card" class="ir-callout" style="display:none;margin-top:8px">
         <div style="font-weight:600;margin-bottom:6px">Paste Base64 code for "<span id="ir-paste-cmd-label">—</span>"</div>
-        <div style="font-size:12px;color:var(--secondary-text-color);margin-bottom:8px">
+        <div style="font-size:12px;color:var(--secondary-text-color);margin-bottom:8px" id="ir-paste-hint">
           Paste the Broadlink Base64 string (typically starts with <code>JgB</code> for IR or <code>sgB</code> for RF).
         </div>
         <textarea id="ir-paste-input" rows="4" style="width:100%;font-family:monospace;font-size:12px;padding:8px;box-sizing:border-box;border:1px solid var(--divider-color);border-radius:6px;resize:vertical" placeholder="JgBQAAAB..."></textarea>
@@ -797,7 +797,7 @@ class ARSmartIRPanel extends HTMLElement {
       <div id="ir-bulk-import-modal" class="ir-delete-confirm" style="display:none">
         <p style="font-weight:600;margin-bottom:4px">Bulk import codes</p>
         <p style="font-size:12px;color:var(--secondary-text-color);margin-top:0">
-          Paste a JSON object mapping command names to Base64 codes. Existing commands with the same name will be overwritten.
+          Paste a JSON object mapping command names to codes (Broadlink Base64 strings, or Tasmota IRSend JSON if this entry uses a Tasmota controller). Existing commands with the same name will be overwritten.
         </p>
         <textarea id="ir-bulk-input" rows="8" style="width:100%;font-family:monospace;font-size:12px;padding:8px;box-sizing:border-box;border:1px solid var(--divider-color);border-radius:6px;resize:vertical" placeholder='{
   "power": "JgBQAAAB...",
@@ -819,7 +819,7 @@ class ARSmartIRPanel extends HTMLElement {
       <!-- Left: virtual remote -->
       <div class="ir-card" style="padding:18px">
         <div class="ir-card-title">Virtual remote</div>
-        <div class="ir-card-desc" style="margin-bottom:12px">Click any button to fire the command immediately through your Broadlink.</div>
+        <div class="ir-card-desc" style="margin-bottom:12px">Click any button to fire the command immediately through your IR controller.</div>
         <div class="ir-remote-wrap">
           <div class="ir-remote-shell">
             <div class="ir-remote-top" id="ir-remote-name">Remote</div>
@@ -990,6 +990,21 @@ class ARSmartIRPanel extends HTMLElement {
     this._refreshDerivedUI();
   }
 
+  _entryLabel(e) {
+    const tag = e.controller_type === "tasmota_mqtt" ? "Tasmota" : "Broadlink";
+    const detail = e.controller_type === "tasmota_mqtt" ? (e.mqtt_base_topic || "") : (e.remote_entity || "");
+    return detail ? `${e.title} — ${tag} (${detail})` : `${e.title} — ${tag}`;
+  }
+
+  _currentEntry() {
+    const entryId = this.qs("#ir-entry")?.value;
+    return (this._data.entries || []).find(e => e.entry_id === entryId) || null;
+  }
+
+  _currentController() {
+    return this._currentEntry()?.controller_type === "tasmota_mqtt" ? "tasmota_mqtt" : "broadlink";
+  }
+
   _populateEntries() {
     const sel = this.qs("#ir-entry");
     const prev = sel.value;
@@ -997,7 +1012,7 @@ class ARSmartIRPanel extends HTMLElement {
     (this._data.entries || []).forEach(e => {
       const opt = document.createElement("option");
       opt.value = e.entry_id;
-      opt.text = e.remote_entity || e.title;
+      opt.text = this._entryLabel(e);
       sel.add(opt);
     });
     if (prev && this._data.entries.some(e => e.entry_id === prev)) sel.value = prev;
@@ -1008,7 +1023,7 @@ class ARSmartIRPanel extends HTMLElement {
       (this._data.entries || []).forEach(e => {
         const opt = document.createElement("option");
         opt.value = e.entry_id;
-        opt.text = e.remote_entity || e.title;
+        opt.text = this._entryLabel(e);
         delSel.add(opt);
       });
     }
@@ -1118,15 +1133,21 @@ class ARSmartIRPanel extends HTMLElement {
     const cmdName = this.qs("#ir-cmd").value.trim();
     const entryId = this.qs("#ir-entry").value;
     const key = this._currentKey;
-    const mode = this._learnMode === "rf" ? "rf" : "ir";
+    const controller = this._currentController();
+    const mode = controller === "tasmota_mqtt" ? "ir" : (this._learnMode === "rf" ? "rf" : "ir");
     if (!cmdName) { this._showLearnCallout("Enter a command name first.", "error"); return; }
     if (!key) { this._showCallout("Save a profile first.", "error"); this._setStep(2); return; }
     if (!entryId) { this._showCallout("Select a remote entry.", "error"); return; }
     await this._run(async () => {
       await this._hass.callService("ar_smart_ir_builder", "save_device", this._profilePayload());
-      const prompt = mode === "rf"
-        ? `📡 RF sweep — press and HOLD a button on the remote, then tap it once to capture "${cmdName}"…`
-        : `⏳ Point remote at Broadlink and press the button for "${cmdName}"…`;
+      let prompt;
+      if (controller === "tasmota_mqtt") {
+        prompt = `⏳ Point the remote at the Tasmota IR receiver and press the button for "${cmdName}"… (waiting up to 25s)`;
+      } else {
+        prompt = mode === "rf"
+          ? `📡 RF sweep — press and HOLD a button on the remote, then tap it once to capture "${cmdName}"…`
+          : `⏳ Point remote at Broadlink and press the button for "${cmdName}"…`;
+      }
       this._showLearnCallout(prompt, "learning");
       this._setLearning(true);
       await this._hass.callApi(
@@ -1146,16 +1167,30 @@ class ARSmartIRPanel extends HTMLElement {
   }
 
   _setLearnMode(mode) {
+    if (this._currentController() === "tasmota_mqtt") {
+      // RF capture isn't supported through the Tasmota IRSend/IRRecv path,
+      // so always pin to IR for this controller type.
+      mode = "ir";
+    }
     this._learnMode = mode === "rf" ? "rf" : "ir";
     const irBtn = this.qs("#ir-mode-ir");
     const rfBtn = this.qs("#ir-mode-rf");
     if (irBtn) irBtn.classList.toggle("active", this._learnMode === "ir");
-    if (rfBtn) rfBtn.classList.toggle("active", this._learnMode === "rf");
+    if (rfBtn) {
+      rfBtn.classList.toggle("active", this._learnMode === "rf");
+      const rfDisabled = this._currentController() === "tasmota_mqtt";
+      rfBtn.disabled = rfDisabled;
+      rfBtn.title = rfDisabled ? "RF capture is only available with a Broadlink controller" : "";
+    }
     const hint = this.qs("#ir-mode-hint");
     if (hint) {
-      hint.textContent = this._learnMode === "rf"
-        ? "RF capture (e.g. 433 MHz gates, blinds). Two steps: press and hold a button so the Broadlink finds the frequency, then tap it once to capture. Needs RF-capable hardware (RM Pro / RM4 Pro)."
-        : "Infrared capture — press the button on your remote once when prompted.";
+      if (this._currentController() === "tasmota_mqtt") {
+        hint.textContent = "Infrared capture — press the button on your remote once when prompted. RF capture isn't supported on Tasmota IR controllers.";
+      } else {
+        hint.textContent = this._learnMode === "rf"
+          ? "RF capture (e.g. 433 MHz gates, blinds). Two steps: press and hold a button so the Broadlink finds the frequency, then tap it once to capture. Needs RF-capable hardware (RM Pro / RM4 Pro)."
+          : "Infrared capture — press the button on your remote once when prompted.";
+      }
     }
   }
 
@@ -1175,6 +1210,22 @@ class ARSmartIRPanel extends HTMLElement {
     return true;
   }
 
+  _isLikelyTasmotaIR(s) {
+    if (typeof s !== "string") return false;
+    let parsed;
+    try { parsed = JSON.parse(s.trim()); } catch (e) { return false; }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    // Decoded protocol form: {"Protocol":"NEC","Bits":32,"Data":"0x..."}
+    if (typeof parsed.Protocol === "string" && ("Data" in parsed)) return true;
+    return false;
+  }
+
+  _isValidCodeForCurrentController(s) {
+    return this._currentController() === "tasmota_mqtt"
+      ? this._isLikelyTasmotaIR(s)
+      : this._isLikelyBase64(s);
+  }
+
   _showPasteCard() {
     const cmdName = this.qs("#ir-cmd").value.trim();
     if (!cmdName) {
@@ -1188,6 +1239,15 @@ class ARSmartIRPanel extends HTMLElement {
     }
     this.qs("#ir-paste-cmd-label").textContent = cmdName;
     this.qs("#ir-paste-input").value = "";
+    const hintEl = this.qs("#ir-paste-hint");
+    const inputEl = this.qs("#ir-paste-input");
+    if (this._currentController() === "tasmota_mqtt") {
+      if (hintEl) hintEl.textContent = 'Paste Tasmota IRSend JSON, e.g. {"Protocol":"NEC","Bits":32,"Data":"0x20DF10EF"} — this is what Tasmota\'s console prints when it receives a signal.';
+      if (inputEl) inputEl.placeholder = '{"Protocol":"NEC","Bits":32,"Data":"0x20DF10EF"}';
+    } else {
+      if (hintEl) hintEl.textContent = "Paste the Broadlink Base64 string (typically starts with JgB for IR or sgB for RF).";
+      if (inputEl) inputEl.placeholder = "JgBQAAAB...";
+    }
     this.qs("#ir-paste-card").style.display = "block";
     this.qs("#ir-paste-input").focus();
   }
@@ -1206,9 +1266,12 @@ class ARSmartIRPanel extends HTMLElement {
     if (!cmdName) { this._showLearnCallout("Command name is empty.", "error"); return; }
     if (!key) { this._showCallout("Save a profile first.", "error"); this._setStep(2); return; }
     if (!entryId) { this._showCallout("Select a remote entry.", "error"); return; }
-    if (!code) { this._showLearnCallout("Paste a Base64 code first.", "error"); return; }
-    if (!this._isLikelyBase64(code)) {
-      this._showLearnCallout("That doesn't look like a valid Base64 code. Check for spaces, line breaks, or missing characters.", "error");
+    if (!code) { this._showLearnCallout("Paste a code first.", "error"); return; }
+    if (!this._isValidCodeForCurrentController(code)) {
+      const msg = this._currentController() === "tasmota_mqtt"
+        ? 'That doesn\'t look like valid Tasmota IRSend JSON, e.g. {"Protocol":"NEC","Bits":32,"Data":"0x20DF10EF"}.'
+        : "That doesn't look like a valid Base64 code. Check for spaces, line breaks, or missing characters.";
+      this._showLearnCallout(msg, "error");
       return;
     }
 
@@ -1304,7 +1367,7 @@ class ARSmartIRPanel extends HTMLElement {
     const valid = {};
     const skipped = [];
     for (const [name, code] of Object.entries(imported)) {
-      if (this._isLikelyBase64(code)) {
+      if (this._isValidCodeForCurrentController(code)) {
         valid[name] = code;
       } else {
         skipped.push(name);
@@ -1313,7 +1376,9 @@ class ARSmartIRPanel extends HTMLElement {
 
     if (Object.keys(valid).length === 0) {
       feedback.style.color = "#c0392b";
-      feedback.textContent = "No valid Base64 codes found in the input.";
+      feedback.textContent = this._currentController() === "tasmota_mqtt"
+        ? "No valid Tasmota IRSend JSON codes found in the input."
+        : "No valid Base64 codes found in the input.";
       return;
     }
 
@@ -1525,6 +1590,7 @@ class ARSmartIRPanel extends HTMLElement {
   // ── UI helpers ────────────────────────────────────────────────────────────
 
   _refreshDerivedUI() {
+    this._setLearnMode(this._learnMode || "ir");
     if (this._step === 3) { this._renderPills(); this._renderRepeatEditor(); }
     if (this._step === 4) this._renderTestRemote();
     if (this._step === 5) { this._renderChecklist(); this._renderRaw(); }
@@ -1861,7 +1927,7 @@ class ARSmartIRPanel extends HTMLElement {
     const entryId = sel?.value;
     if (!entryId) return;
     const entry = (this._data.entries || []).find(e => e.entry_id === entryId);
-    this.qs("#ir-delete-entry-name").textContent = entry ? (entry.remote_entity || entry.title) : entryId;
+    this.qs("#ir-delete-entry-name").textContent = entry ? this._entryLabel(entry) : entryId;
     this.qs("#ir-delete-entry-confirm").classList.add("show");
   }
 

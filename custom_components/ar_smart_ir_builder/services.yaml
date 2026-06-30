@@ -1,6 +1,9 @@
 learn_and_capture:
   name: Learn and capture code
-  description: Start Broadlink learn mode and capture the learned code into AR Smart IR Builder storage.
+  description: >
+    Start learn mode and capture the learned code into AR Smart IR Builder storage.
+    For Broadlink entries this triggers the remote's learn mode; for Tasmota (MQTT)
+    entries it waits for the device's next IR receive event instead.
   fields:
     entry_id:
       required: true
@@ -20,6 +23,7 @@ learn_and_capture:
         text:
     command_type:
       required: false
+      description: Broadlink only — ignored for Tasmota (MQTT) entries, which are IR-only.
       selector:
         select:
           options:
@@ -29,6 +33,14 @@ learn_and_capture:
       required: false
       selector:
         boolean: {}
+    learn_timeout:
+      required: false
+      description: Tasmota (MQTT) only — seconds to wait for an IR receive event before giving up. Default 25.
+      selector:
+        number:
+          min: 5
+          max: 60
+          step: 1
 
 save_device:
   name: Save device
@@ -104,7 +116,7 @@ export_ha_scripts:
 
 test_command:
   name: Test command
-  description: Fire a single learned command from a saved profile immediately via the Broadlink remote.
+  description: Fire a single learned command from a saved profile immediately via the entry's IR controller (Broadlink remote or Tasmota MQTT).
   fields:
     entry_id:
       required: true
