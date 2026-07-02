@@ -32,7 +32,7 @@ from .const import (
     resolve_controller_type,
     resolve_mqtt_base_topic,
 )
-from .storage import ARSmartIRStore, normalize_device
+from .storage import ARSmartIRStore, find_duplicate_command, normalize_device
 
 LEARN_SCHEMA = vol.Schema(
     {
@@ -367,6 +367,12 @@ def _async_register_services(hass: HomeAssistant) -> None:
             device = store.get_device(call.data["device_key"]) or normalize_device()
             device["entry_id"] = call.data["entry_id"]
             device["commands_encoding"] = "TasmotaIR"
+            duplicate_of = find_duplicate_command(
+                device.get("commands", {}),
+                "TasmotaIR",
+                code,
+                skip_name=call.data["command_name"],
+            )
             device.setdefault("commands", {})[call.data["command_name"]] = code
 
             await store.upsert_device(entry, call.data["device_key"], device)
@@ -376,6 +382,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 "device_key": call.data["device_key"],
                 "command_name": call.data["command_name"],
                 "code": code,
+                "duplicate_of": duplicate_of,
             }
 
         remote = entry.data.get(CONF_REMOTE_ENTITY)
@@ -408,6 +415,12 @@ def _async_register_services(hass: HomeAssistant) -> None:
         store: ARSmartIRStore = hass.data[DOMAIN][DATA_STORE]
         device = store.get_device(call.data["device_key"]) or normalize_device()
         device["entry_id"] = call.data["entry_id"]
+        duplicate_of = find_duplicate_command(
+            device.get("commands", {}),
+            device.get("commands_encoding", "Base64"),
+            code,
+            skip_name=call.data["command_name"],
+        )
         device.setdefault("commands", {})[call.data["command_name"]] = code
 
         await store.upsert_device(entry, call.data["device_key"], device)
@@ -417,6 +430,7 @@ def _async_register_services(hass: HomeAssistant) -> None:
             "device_key": call.data["device_key"],
             "command_name": call.data["command_name"],
             "code": code,
+            "duplicate_of": duplicate_of,
         }
 
     async def export(call: ServiceCall) -> None:

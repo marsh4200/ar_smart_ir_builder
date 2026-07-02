@@ -7,6 +7,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .const import CONF_BROADLINK_DEVICE, CONF_DEVICES, DOMAIN
+from .signal_fingerprint import fingerprint_command
 
 DEFAULT_DATA: dict[str, Any] = {
     "devices": {},
@@ -63,6 +64,46 @@ def _normalize_command_options(raw: Any, commands: dict[str, Any]) -> dict[str, 
     return cleaned
 
 
+def _compute_command_fingerprints(
+    commands: dict[str, Any], encoding: str
+) -> dict[str, str]:
+    """Best-effort S/L (or decoded-protocol) identity per command.
+
+    Recomputed on every normalize rather than cached, since it's cheap
+    (a handful of commands, a few hundred pulses each at most) and keeps
+    this from ever drifting out of sync with the actual stored code.
+    """
+    fingerprints: dict[str, str] = {}
+    for name, code in commands.items():
+        if not isinstance(code, str):
+            continue
+        fp = fingerprint_command(code, encoding)
+        if fp:
+            fingerprints[name] = fp
+    return fingerprints
+
+
+def find_duplicate_command(
+    commands: dict[str, Any],
+    encoding: str,
+    new_code: str,
+    skip_name: str | None = None,
+) -> str | None:
+    """Return the name of an existing command that fingerprints the same
+    as `new_code`, or None. Used to flag "you just re-learned an existing
+    button under a new name" rather than silently storing a duplicate.
+    """
+    new_fp = fingerprint_command(new_code, encoding)
+    if not new_fp:
+        return None
+    for name, code in commands.items():
+        if name == skip_name or not isinstance(code, str):
+            continue
+        if fingerprint_command(code, encoding) == new_fp:
+            return name
+    return None
+
+
 def normalize_device(device: dict[str, Any] | None = None) -> dict[str, Any]:
     raw = deepcopy(device or {})
     commands = raw.get("commands")
@@ -85,6 +126,9 @@ def normalize_device(device: dict[str, Any] | None = None) -> dict[str, Any]:
         "supported_models": supported_models,
         "commands_encoding": raw.get("commands_encoding", "Base64"),
         "commands": commands,
+        "command_fingerprints": _compute_command_fingerprints(
+            commands, raw.get("commands_encoding", "Base64")
+        ),
         "command_options": command_options,
         "climate_style": "relative" if raw.get("climate_style") == "relative" else "absolute",
     }
