@@ -86,6 +86,7 @@ def normalize_device(device: dict[str, Any] | None = None) -> dict[str, Any]:
         "commands_encoding": raw.get("commands_encoding", "Base64"),
         "commands": commands,
         "command_options": command_options,
+        "climate_style": "relative" if raw.get("climate_style") == "relative" else "absolute",
     }
     return {**raw, **normalized}
 

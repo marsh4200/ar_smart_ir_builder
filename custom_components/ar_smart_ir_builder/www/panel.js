@@ -1,4 +1,4 @@
-// AR Smart IR Builder — panel.js v2.1.0
+// AR Smart IR Builder — panel.js v2.2.0
 // Full rebuild: test commands, HA script export, polished remote UI
 
 const RECOMMENDED = {
@@ -7,6 +7,15 @@ const RECOMMENDED = {
     ["Temperature", ["temp_16","temp_18","temp_20","temp_22","temp_24","temp_26","temp_28","temp_30"]],
     ["Fan speed", ["fan_low","fan_medium","fan_high","fan_auto"]],
     ["Swing", ["swing_on","swing_off"]],
+  ],
+  // For remotes with a single cycling "Mode" button and Temp +/- buttons
+  // instead of a discrete button per mode/temperature value.
+  climate_relative: [
+    ["Power", ["power_toggle","off"]],
+    ["Mode", ["mode_toggle"]],
+    ["Temperature", ["temp_up","temp_down"]],
+    ["Fan speed", ["fan_toggle","fan_low","fan_medium","fan_high","fan_auto"]],
+    ["Swing", ["swing_toggle","swing_on","swing_off"]],
   ],
   fan: [
     ["Power", ["on","off"]],
@@ -49,6 +58,11 @@ const COMMAND_HINTS = {
   netflix:"Netflix", youtube:"YouTube",
   timer_1h:"Timer 1 hour", timer_2h:"Timer 2 hours",
   timer_4h:"Timer 4 hours", timer_8h:"Timer 8 hours",
+  power_toggle:"Power toggle (single button)",
+  mode_toggle:"Mode button — cycles cool/heat/dry/auto/fan on each press",
+  temp_up:"Temperature up (single step)", temp_down:"Temperature down (single step)",
+  fan_toggle:"Fan speed button — cycles speeds on each press",
+  swing_toggle:"Swing button — toggles on each press",
 };
 
 function humanize(key) {
@@ -148,6 +162,21 @@ const REMOTE_LAYOUTS = {
     { type: "row", btns: [
       { cmd: "swing_on", icon: "↕", label: "Swing On" },
       { cmd: "swing_off", icon: "—", label: "Swing Off" },
+    ]},
+  ],
+  climate_relative: [
+    { type: "row", btns: [
+      { cmd: "power_toggle", icon: "⏻", label: "Power", cls: "power" },
+      { cmd: "off", icon: "⏹", label: "Off" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "mode_toggle", icon: "⟳", label: "Mode" },
+      { cmd: "fan_toggle", icon: "〰", label: "Fan speed" },
+      { cmd: "swing_toggle", icon: "↕", label: "Swing" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "temp_down", icon: "－", label: "Temp −" },
+      { cmd: "temp_up", icon: "＋", label: "Temp +" },
     ]},
   ],
   fan: [
@@ -601,7 +630,7 @@ class ARSmartIRPanel extends HTMLElement {
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v2.1.0</div>
+      <div class="ir-version">v2.2.0</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -690,6 +719,14 @@ class ARSmartIRPanel extends HTMLElement {
               <option value="media_player">Media player</option>
               <option value="tv">TV</option>
             </select>
+          </div>
+          <div class="ir-field" id="ir-climate-style-field">
+            <label>AC remote style</label>
+            <select id="ir-climate-style">
+              <option value="absolute">Discrete buttons — one button per mode / per temperature</option>
+              <option value="relative">Mode + Temp ±  — one Mode button cycles modes, one Up/Down button steps temperature</option>
+            </select>
+            <div class="ir-hint">If your remote only has a single "Mode" button and Temp +/- buttons instead of separate Cool/Heat/Dry and 18°/20°/22° buttons, pick the second option.</div>
           </div>
         </div>
         <details class="ir-advanced">
@@ -919,6 +956,11 @@ class ARSmartIRPanel extends HTMLElement {
     });
     this.qs("#ir-save-details").onclick = () => this._saveDetails();
     this.qs("#ir-back-to-1").onclick = () => this._setStep(1);
+    this.qs("#ir-type").addEventListener("change", () => {
+      this._toggleClimateStyleField();
+      this._refreshDerivedUI();
+    });
+    this.qs("#ir-climate-style").addEventListener("change", () => this._refreshDerivedUI());
 
     // Step 3
     this.qs("#ir-learn-btn").onclick = () => this._learnCommand();
@@ -1044,7 +1086,8 @@ class ARSmartIRPanel extends HTMLElement {
       const d = devices[key];
       const icon = TYPE_ICONS[d.device_type] || "📡";
       const cmdCount = Object.keys(d.commands || {}).length;
-      const rec = (RECOMMENDED[d.device_type] || RECOMMENDED.climate).flatMap(([, c]) => c);
+      const recType = this._effectiveType(d.device_type, d.climate_style);
+      const rec = (RECOMMENDED[recType] || RECOMMENDED.climate).flatMap(([, c]) => c);
       const covered = rec.filter(c => d.commands?.[c]).length;
       const pct = rec.length ? Math.round(covered / rec.length * 100) : 0;
 
@@ -1074,6 +1117,8 @@ class ARSmartIRPanel extends HTMLElement {
     this.qs("#ir-key").value = "";
     delete this.qs("#ir-key").dataset.manualEdit;
     this.qs("#ir-type").value = "climate";
+    this.qs("#ir-climate-style").value = "absolute";
+    this._toggleClimateStyleField();
     this.qs("#ir-manufacturer").value = "";
     this.qs("#ir-model").value = "";
     this.qs("#ir-supported-models").value = "";
@@ -1087,6 +1132,8 @@ class ARSmartIRPanel extends HTMLElement {
     this.qs("#ir-key").value = key;
     this.qs("#ir-key").dataset.manualEdit = "1";
     this.qs("#ir-type").value = d.device_type || "climate";
+    this.qs("#ir-climate-style").value = d.climate_style === "relative" ? "relative" : "absolute";
+    this._toggleClimateStyleField();
     this.qs("#ir-manufacturer").value = d.manufacturer || "";
     this.qs("#ir-model").value = d.model || "";
     this.qs("#ir-supported-models").value = (d.supported_models || []).join(", ");
@@ -1108,6 +1155,7 @@ class ARSmartIRPanel extends HTMLElement {
       entry_id: this.qs("#ir-entry").value,
       name, manufacturer: this.qs("#ir-manufacturer").value.trim(),
       model, device_type: this.qs("#ir-type").value || "climate",
+      climate_style: this.qs("#ir-climate-style")?.value === "relative" ? "relative" : "absolute",
       supported_models: rawModels.length ? rawModels : [model],
       commands: existing.commands || {},
     };
@@ -1480,9 +1528,10 @@ class ARSmartIRPanel extends HTMLElement {
 
   _renderTestRemote() {
     const device = this._data.store?.devices?.[this._currentKey];
-    const type = device?.device_type || this.qs("#ir-type")?.value || "climate";
+    const rawType = device?.device_type || this.qs("#ir-type")?.value || "climate";
+    const type = this._effectiveType(rawType, device?.climate_style);
     const commands = device?.commands || {};
-    const layout = REMOTE_LAYOUTS[type] || REMOTE_LAYOUTS.tv;
+    const layout = REMOTE_LAYOUTS[type] || REMOTE_LAYOUTS[rawType] || REMOTE_LAYOUTS.tv;
     const name = device?.name || humanize(this._currentKey) || "Remote";
 
     const nameEl = this.qs("#ir-remote-name");
@@ -1600,9 +1649,20 @@ class ARSmartIRPanel extends HTMLElement {
     return Object.keys(this._data.store?.devices?.[this._currentKey]?.commands || {});
   }
 
+  _effectiveType(type, style) {
+    const t = type ?? this.qs("#ir-type")?.value ?? "climate";
+    const s = style ?? this.qs("#ir-climate-style")?.value ?? "absolute";
+    return (t === "climate" && s === "relative") ? "climate_relative" : t;
+  }
+
   _recommendedGroups() {
-    const type = this.qs("#ir-type")?.value || "climate";
+    const type = this._effectiveType();
     return RECOMMENDED[type] || RECOMMENDED.climate;
+  }
+
+  _toggleClimateStyleField() {
+    const field = this.qs("#ir-climate-style-field");
+    if (field) field.style.display = this.qs("#ir-type")?.value === "climate" ? "" : "none";
   }
 
   _allRecommended() {
