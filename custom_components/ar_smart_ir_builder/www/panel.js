@@ -891,6 +891,7 @@ class ARSmartIRPanel extends HTMLElement {
           <h3>📦 ar_smart_ir codeset</h3>
           <p>Builds a typed codeset and saves it to <code>/config/ar_smart_ir_codes/&lt;platform&gt;/&lt;code&gt;.json</code> (auto-numbered from 9000, survives HACS updates). Then pick that code in the ar_smart_ir config flow.</p>
           <button class="ir-btn ir-btn-primary" id="ir-export-smartir-btn">Export to ar_smart_ir</button>
+          <a id="ir-smartir-download" class="ir-btn ir-btn-ghost" style="display:none;margin-top:8px" download>⬇ Download a copy</a>
         </div>
         <div class="ir-export-card">
           <h3>📜 HA Scripts YAML</h3>
@@ -1483,19 +1484,33 @@ class ARSmartIRPanel extends HTMLElement {
       );
       const r = (res && res.response) || {};
       if (r.code) {
+        const label = r.platform_label || r.platform;
+        const man = r.manufacturer || "Unknown";
         this._showCallout(
-          `Exported as ar_smart_ir code ${r.code} (${r.platform}) → pick it in the ar_smart_ir config flow. Saved to ${r.path}.`,
+          `✓ Exported. In ar_smart_ir: Add device → choose "${label}" → ` +
+          `manufacturer "${man}" → code ${r.code}. ` +
+          `Edit codes only at ${r.path} — the download is a copy, not the live file.`,
           "success"
         );
         const notes = r.report && r.report.notes;
         if (notes && notes.length) {
           this._showCallout(notes.join(" "), "warning");
         }
+        // Download the copy only when the user asks for it — auto-opening it is
+        // what led people to edit the wrong (copy) file.
+        this._offerDownload(r.download_url || `/local/ar_smart_ir_exports/${key}.json`);
       } else {
         this._showCallout(`SmartIR JSON exported → /local/ar_smart_ir_exports/${key}.json`, "success");
+        this._offerDownload(`/local/ar_smart_ir_exports/${key}.json`);
       }
-      window.open(`/local/ar_smart_ir_exports/${key}.json`, "_blank");
     });
+  }
+
+  _offerDownload(url) {
+    const a = this.qs("#ir-smartir-download");
+    if (!a) return;
+    a.href = url;
+    a.style.display = "inline-flex";
   }
 
   async _exportHAScripts() {
