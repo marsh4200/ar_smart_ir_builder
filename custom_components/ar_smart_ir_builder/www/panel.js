@@ -1972,6 +1972,27 @@ class ARSmartIRPanel extends HTMLElement {
 
   // ── Run wrapper ───────────────────────────────────────────────────────────
 
+  _errText(err) {
+    if (err == null) return "Unknown error";
+    if (typeof err === "string") return err;
+    const cands = [
+      err.body && err.body.message,
+      err.message,
+      err.body && err.body.error,
+      typeof err.error === "string" ? err.error : null,
+      typeof err.body === "string" ? err.body : null,
+      err.status_code ? `Request failed (HTTP ${err.status_code})` : null,
+    ];
+    for (const c of cands) {
+      if (typeof c === "string" && c && c !== "[object Object]") return c;
+    }
+    try {
+      const s = JSON.stringify(err);
+      if (s && s !== "{}") return s;
+    } catch (_) {}
+    return String(err);
+  }
+
   async _run(fn, onError) {
     if (this._busy) return;
     this._busy = true;
@@ -1979,8 +2000,7 @@ class ARSmartIRPanel extends HTMLElement {
     try {
       await fn();
     } catch (err) {
-      const msg = err?.body?.message || err?.message || String(err);
-      this._showCallout(`Error: ${msg}`, "error");
+      this._showCallout(`Error: ${this._errText(err)}`, "error");
       if (onError) onError(err);
     } finally {
       this._busy = false;

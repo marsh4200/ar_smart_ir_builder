@@ -307,7 +307,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=27",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=28",
                 }
             },
             require_admin=True,
@@ -334,6 +334,17 @@ def _async_register_services(hass: HomeAssistant) -> None:
             if not base_topic:
                 raise HomeAssistantError(
                     "MQTT base topic is not configured for this entry."
+                )
+            if base_topic.strip().lower().lstrip("/").startswith("zigbee2mqtt"):
+                raise HomeAssistantError(
+                    f"'{base_topic}' looks like a Zigbee2MQTT topic. The "
+                    "'Tasmota IR (MQTT)' controller only works with Tasmota IR "
+                    "blasters — it listens on tele/<topic>/RESULT for Tasmota's "
+                    "IrReceived, which a Zigbee2MQTT blaster (e.g. Tuya ZS06 / "
+                    "UFO-R11) never publishes, so learning always times out. "
+                    "Zigbee2MQTT Tuya blasters aren't supported by the Builder's "
+                    "learn flow yet — use them directly in the ar_smart_ir "
+                    "integration, which has a UFOR11/Tuya controller."
                 )
             timeout = call.data.get("learn_timeout", 25.0)
             code = await async_learn_tasmota_code(hass, base_topic, timeout=timeout)
