@@ -888,9 +888,9 @@ class ARSmartIRPanel extends HTMLElement {
 
       <div class="ir-export-grid">
         <div class="ir-export-card">
-          <h3>📦 SmartIR JSON</h3>
-          <p>Compatible with the SmartIR integration. Exports to <code>/config/www/ar_smart_ir_exports/{key}.json</code>.</p>
-          <button class="ir-btn ir-btn-primary" id="ir-export-smartir-btn">Export SmartIR JSON</button>
+          <h3>📦 ar_smart_ir codeset</h3>
+          <p>Builds a typed codeset and saves it to <code>/config/ar_smart_ir_codes/&lt;platform&gt;/&lt;code&gt;.json</code> (auto-numbered from 9000, survives HACS updates). Then pick that code in the ar_smart_ir config flow.</p>
+          <button class="ir-btn ir-btn-primary" id="ir-export-smartir-btn">Export to ar_smart_ir</button>
         </div>
         <div class="ir-export-card">
           <h3>📜 HA Scripts YAML</h3>
@@ -1477,8 +1477,23 @@ class ARSmartIRPanel extends HTMLElement {
     if (!key) { this._showCallout("No profile selected.", "error"); return; }
     await this._run(async () => {
       await this._hass.callService("ar_smart_ir_builder", "save_device", this._profilePayload());
-      await this._hass.callService("ar_smart_ir_builder", "export_device", { device_key: key });
-      this._showCallout(`SmartIR JSON exported → /local/ar_smart_ir_exports/${key}.json`, "success");
+      const res = await this._hass.callService(
+        "ar_smart_ir_builder", "export_device", { device_key: key },
+        undefined, true, true
+      );
+      const r = (res && res.response) || {};
+      if (r.code) {
+        this._showCallout(
+          `Exported as ar_smart_ir code ${r.code} (${r.platform}) → pick it in the ar_smart_ir config flow. Saved to ${r.path}.`,
+          "success"
+        );
+        const notes = r.report && r.report.notes;
+        if (notes && notes.length) {
+          this._showCallout(notes.join(" "), "warning");
+        }
+      } else {
+        this._showCallout(`SmartIR JSON exported → /local/ar_smart_ir_exports/${key}.json`, "success");
+      }
       window.open(`/local/ar_smart_ir_exports/${key}.json`, "_blank");
     });
   }
@@ -1957,6 +1972,27 @@ class ARSmartIRPanel extends HTMLElement {
 
   // ── Run wrapper ───────────────────────────────────────────────────────────
 
+  _errText(err) {
+    if (err == null) return "Unknown error";
+    if (typeof err === "string") return err;
+    const cands = [
+      err.body && err.body.message,
+      err.message,
+      err.body && err.body.error,
+      typeof err.error === "string" ? err.error : null,
+      typeof err.body === "string" ? err.body : null,
+      err.status_code ? `Request failed (HTTP ${err.status_code})` : null,
+    ];
+    for (const c of cands) {
+      if (typeof c === "string" && c && c !== "[object Object]") return c;
+    }
+    try {
+      const s = JSON.stringify(err);
+      if (s && s !== "{}") return s;
+    } catch (_) {}
+    return String(err);
+  }
+
   async _run(fn, onError) {
     if (this._busy) return;
     this._busy = true;
@@ -1964,8 +2000,7 @@ class ARSmartIRPanel extends HTMLElement {
     try {
       await fn();
     } catch (err) {
-      const msg = err?.body?.message || err?.message || String(err);
-      this._showCallout(`Error: ${msg}`, "error");
+      this._showCallout(`Error: ${this._errText(err)}`, "error");
       if (onError) onError(err);
     } finally {
       this._busy = false;
