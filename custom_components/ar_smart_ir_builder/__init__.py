@@ -35,6 +35,16 @@ from .const import (
 from .storage import ARSmartIRStore, find_duplicate_command, normalize_device
 from .smartir_export import SmartIRExportError, build_codeset
 
+# ar_smart_ir codes/<platform> folder -> the label shown on the first screen of
+# the ar_smart_ir add-device flow. Used so the export tells the user exactly
+# which device type to pick.
+_SMARTIR_PLATFORM_LABELS = {
+    "climate": "Climate",
+    "fan": "Fan",
+    "light": "Light",
+    "media_player": "Media Player",
+}
+
 LEARN_SCHEMA = vol.Schema(
     {
         vol.Required("entry_id"): cv.string,
@@ -307,7 +317,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=28",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=29",
                 }
             },
             require_admin=True,
@@ -473,18 +483,47 @@ def _async_register_services(hass: HomeAssistant) -> None:
 
             (codes_dir / f"{code}.json").write_text(payload_json)
 
-            # Convenience copy under www so the panel can preview/download it.
+            # Download-only copy under www. This is NOT read by the integration —
+            # it's here so the panel can offer a download. The live codeset is the
+            # numeric file above; edit that one, never this copy.
             www_dir = Path(hass.config.path("www", "ar_smart_ir_exports"))
             www_dir.mkdir(parents=True, exist_ok=True)
+            readme = www_dir / "READ_ME_FIRST.txt"
+            if not readme.exists():
+                readme.write_text(
+                    "These files are DOWNLOAD COPIES only.\n"
+                    "AR Smart IR does NOT read from this folder.\n\n"
+                    "The live codeset the integration uses lives at:\n"
+                    "  /config/ar_smart_ir_codes/<platform>/<code>.json\n\n"
+                    "To change a manufacturer/model/command, edit that numeric file,\n"
+                    "not the copy here.\n"
+                )
             (www_dir / f"{device_key}.json").write_text(payload_json)
             return code
 
         code = await hass.async_add_executor_job(_write)
 
+        platform_label = _SMARTIR_PLATFORM_LABELS.get(platform, platform)
+        manufacturer = payload.get("manufacturer", "Unknown")
+        models = payload.get("supportedModels") or ["Unknown"]
+        model_label = models[0]
+        instructions = (
+            f"In ar_smart_ir: Add device → choose \"{platform_label}\" → "
+            f"manufacturer \"{manufacturer}\" → code {code}. "
+            f"Edit codes only at /config/ar_smart_ir_codes/{platform}/{code}.json "
+            f"(the download is a copy, not the live file)."
+        )
+
         return {
             "code": code,
             "platform": platform,
+            "platform_label": platform_label,
+            "manufacturer": manufacturer,
+            "model": model_label,
+            "add_as": platform_label,
+            "instructions": instructions,
             "path": f"/config/ar_smart_ir_codes/{platform}/{code}.json",
+            "download_url": f"/local/ar_smart_ir_exports/{device_key}.json",
             "preview_url": f"/local/ar_smart_ir_exports/{device_key}.json",
             "report": report,
         }
