@@ -1660,8 +1660,50 @@ class ARSmartIRPanel extends HTMLElement {
           }, 2000);
         }
       };
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "ir-btn ir-btn-ghost ir-btn-sm";
+      delBtn.textContent = "\u2715";
+      delBtn.title = `Delete "${cmd}" so it can be re-learned`;
+      delBtn.style.flexShrink = "0";
+      let armed = false, disarmTimer = null;
+      const disarm = () => {
+        armed = false;
+        delBtn.className = "ir-btn ir-btn-ghost ir-btn-sm";
+        delBtn.textContent = "\u2715";
+      };
+      delBtn.onclick = async () => {
+        if (!armed) {
+          // Two-tap confirm: first tap arms, second tap within 3s deletes.
+          armed = true;
+          delBtn.className = "ir-btn ir-btn-danger ir-btn-sm";
+          delBtn.textContent = "Delete?";
+          disarmTimer = setTimeout(disarm, 3000);
+          return;
+        }
+        clearTimeout(disarmTimer);
+        delBtn.disabled = true;
+        delBtn.textContent = "Deleting\u2026";
+        const strip = this.qs("#ir-test-strip");
+        try {
+          await this._hass.callService("ar_smart_ir_builder", "delete_command", {
+            device_key: this._currentKey,
+            command_name: cmd,
+            entry_id: this.qs("#ir-entry").value || undefined,
+          });
+          await this._load();
+          this._refreshDerivedUI();
+          if (strip) { strip.className = "ir-test-strip ok"; strip.textContent = `\u2713 "${cmd}" deleted \u2014 re-learn it under the same name in step 3.`; }
+        } catch (err) {
+          const msg = err?.body?.message || err?.message || (typeof err === "string" ? err : "Delete failed");
+          delBtn.disabled = false;
+          disarm();
+          if (strip) { strip.className = "ir-test-strip err"; strip.textContent = `\u2717 ${msg}`; }
+        }
+      };
       row.appendChild(info);
       row.appendChild(testBtn);
+      row.appendChild(delBtn);
       container.appendChild(row);
     });
   }

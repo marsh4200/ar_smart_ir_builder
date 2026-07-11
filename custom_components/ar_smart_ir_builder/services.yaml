@@ -143,3 +143,20 @@ delete_device:
       required: false
       selector:
         text:
+
+delete_command:
+  name: Delete command
+  description: Delete a single learned command from a device profile so it can be re-learned.
+  fields:
+    device_key:
+      required: true
+      selector:
+        text:
+    command_name:
+      required: true
+      selector:
+        text:
+    entry_id:
+      required: false
+      selector:
+        text:

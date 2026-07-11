@@ -208,6 +208,47 @@ class ARSmartIRStore:
         )
         return merged
 
+    async def delete_command(
+        self, entry: ConfigEntry, device_key: str, command_name: str
+    ) -> bool:
+        """Remove a single learned command from a device profile.
+
+        Writes the pruned command set straight into the config entry rather
+        than going through upsert_device, whose additive
+        {**existing, **incoming} command merge would resurrect the command.
+        """
+        entry_devices = entry.data.get(CONF_DEVICES, entry.options.get(CONF_DEVICES, {}))
+        if not isinstance(entry_devices, dict) or device_key not in entry_devices:
+            return False
+
+        device = normalize_device(entry_devices[device_key])
+        if command_name not in device.get("commands", {}):
+            return False
+
+        commands = dict(device.get("commands", {}))
+        commands.pop(command_name, None)
+        device["commands"] = commands
+        # Drop the per-command repeat policy too; normalize would prune the
+        # stale reference on next load anyway, but keep stored data clean now.
+        options = dict(device.get("command_options", {}))
+        options.pop(command_name, None)
+        device["command_options"] = options
+        # Re-normalize so command_fingerprints are recomputed without the
+        # deleted command.
+        device = normalize_device(device)
+        device["entry_id"] = entry.entry_id
+
+        updated_devices = {**entry_devices, device_key: device}
+        self.data.setdefault("devices", {})[device_key] = device
+        updated_data = {**entry.data, CONF_DEVICES: updated_devices}
+        updated_options = {**entry.options, CONF_DEVICES: updated_devices}
+        self.hass.config_entries.async_update_entry(
+            entry,
+            data=updated_data,
+            options=updated_options,
+        )
+        return True
+
     async def delete_device(self, entry: ConfigEntry, device_key: str) -> bool:
         entry_devices = entry.data.get(CONF_DEVICES, entry.options.get(CONF_DEVICES, {}))
         if not isinstance(entry_devices, dict) or device_key not in entry_devices:

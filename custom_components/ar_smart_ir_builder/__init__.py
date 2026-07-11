@@ -70,6 +70,14 @@ DELETE_SCHEMA = vol.Schema(
     }
 )
 
+DELETE_COMMAND_SCHEMA = vol.Schema(
+    {
+        vol.Required("device_key"): cv.string,
+        vol.Required("command_name"): cv.string,
+        vol.Optional("entry_id"): cv.string,
+    }
+)
+
 SAVE_SCHEMA = vol.Schema(
     {
         vol.Required("device_key"): cv.string,
@@ -317,7 +325,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=29",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=30",
                 }
             },
             require_admin=True,
@@ -670,6 +678,28 @@ def _async_register_services(hass: HomeAssistant) -> None:
         await store.async_save()
         async_dispatcher_send(hass, SIGNAL_DEVICES_UPDATED)
 
+    async def delete_command(call: ServiceCall) -> None:
+        store: ARSmartIRStore = hass.data[DOMAIN][DATA_STORE]
+        device_key = call.data["device_key"]
+        command_name = call.data["command_name"]
+        entry_id = call.data.get("entry_id")
+        if not entry_id:
+            existing = store.get_device(device_key)
+            if existing:
+                entry_id = existing.get("entry_id")
+        if not entry_id:
+            raise HomeAssistantError(
+                f"Cannot delete command '{command_name}': entry_id not found."
+            )
+        entry = await _async_get_entry(hass, entry_id)
+        deleted = await store.delete_command(entry, device_key, command_name)
+        if not deleted:
+            raise HomeAssistantError(
+                f"Command '{command_name}' not found on profile '{device_key}'."
+            )
+        await store.async_save()
+        async_dispatcher_send(hass, SIGNAL_DEVICES_UPDATED)
+
     hass.services.async_register(
         DOMAIN, "learn_and_capture", learn,
         schema=LEARN_SCHEMA, supports_response=SupportsResponse.OPTIONAL,
@@ -688,6 +718,9 @@ def _async_register_services(hass: HomeAssistant) -> None:
         schema=TEST_SCHEMA, supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(DOMAIN, "delete_device", delete_device, schema=DELETE_SCHEMA)
+    hass.services.async_register(
+        DOMAIN, "delete_command", delete_command, schema=DELETE_COMMAND_SCHEMA
+    )
 
 
 def _extract_command_candidates(value: Any) -> list[str]:
