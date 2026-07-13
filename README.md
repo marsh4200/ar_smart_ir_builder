@@ -1,259 +1,269 @@
-# 🚀 AR Smart IR Builder
+# AR Smart IR
 
-[![GitHub release](https://img.shields.io/github/v/release/marsh4200/ar_smart_ir_builder.svg)](https://github.com/marsh4200/ar_smart_ir_builder/releases)
+[![Latest Release](https://img.shields.io/github/v/release/marsh4200/ar_smart_ir?include_prereleases)](https://github.com/marsh4200/ar_smart_ir/releases)
+
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
-[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-Integration-blue.svg)](https://www.home-assistant.io/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Top Language](https://img.shields.io/github/languages/top/marsh4200/ar_smart_ir_builder)](https://github.com/marsh4200/ar_smart_ir_builder)
-[![Languages Count](https://img.shields.io/github/languages/count/marsh4200/ar_smart_ir_builder)](https://github.com/marsh4200/ar_smart_ir_builder)
+[![Stars](https://img.shields.io/github/stars/marsh4200/ar_smart_ir)](https://github.com/marsh4200/ar_smart_ir/stargazers)
+
+
+
+[![Add to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](
+  https://my.home-assistant.io/redirect/hacs_repository/?owner=marsh4200&repository=ar_smart_ir&category=integration
+)
+
+**AR Smart IR** is a modern Home Assistant custom integration for infrared-controlled devices, built to simplify SmartIR-style setups through the Home Assistant UI.
+
+Originally built around Broadlink, AR Smart IR is actively being expanded as support for newer devices and controller methods is developed and tested over time. Current work includes ongoing improvements around MQTT, ESPHome, HEX-based IR codes, and raw command conversion.
+
+It is designed for users who want a cleaner, more modern SmartIR experience without relying on legacy YAML setup.
 
 ---
 
-## 📲 Quick Install (HACS)
+## ✨ Features
 
-[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=marsh4200&repository=ar_smart_ir_builder&category=integration)
-
----
-
-## ✨ Overview
-
-**AR Smart IR Builder** is a powerful Home Assistant integration that allows you to:
-
-- Learn IR / RF commands from Broadlink devices, or IR commands from Tasmota IR blasters over MQTT
-- Build full device profiles (TV, Aircon, Fan, Media, Custom)
-- Automatically generate Home Assistant entities
-- Export to SmartIR-compatible format
-- Manage everything 100% from the UI (no YAML)
-
----
-
-## 🔥 Features
-
-### 🎯 UI First Setup
-- Fully Config Flow based
-- No YAML required
-- Easy integration via Devices & Services
-- Pick your controller type during setup: **Broadlink** (remote entity) or **Tasmota IR** (MQTT)
-
-### 📡 IR Learning Engine
-- Learn IR commands in real time
-- Broadlink supported capture
-- Tasmota IR supported capture (over MQTT, no Broadlink hardware required)
-- Test commands instantly
-
-### 🧠 Smart Device Builder
-Create structured device profiles:
-- ❄️ Aircons (Climate)
-- 📺 TVs (Media Player)
-- 🌬️ Fans
-- 🔊 Audio / Custom IR devices
-
-### ⚡ Auto Entity Creation
-Automatically generates:
-- `climate.*`
-- `media_player.*`
-- `fan.*`
-
-### 💾 SmartIR Export Support
-Export working IR configs to:
-```
-/config/www/ar_smart_ir_exports/
-```
+- 🌡️ Control **climate devices** such as air conditioners
+- 📺 Control **media players** such as TVs, projectors, amps, and receivers
+- 🌀 Control **fans**
+- 💡 Control **lights**
+- ⚙️ Uses modern **Config Flow**
+- 🖥️ Setup directly from the **Home Assistant UI**
+- 🚫 No full legacy YAML setup required
+- 📦 Includes a bundled **local IR codes database**
+- 🔁 Supports **command repeat** and **sequence handling**
+- 🛠️ Supports **command override** workflows
+- 📚 Includes a **Broadlink learn service** for saving replacement commands
+- 🔄 Includes command conversion support between **Base64**, **HEX**, **Pronto**, and **Raw** where applicable
+- 🧩 Supports Home Assistant's native **Infrared** emitter entities on HA 2026.4+
+- 🎛️ Optional **AC presets** (Eco, Quiet, Comfort, …) via an optional `presetModes` key in climate codesets
+- 🛑 Optional **Passive mode** for climate — never re-sends unchanged state, letting the AC unit's own thermostat manage temperature
+- ⚡ Updated for newer Home Assistant patterns and compatibility
 
 ---
 
-## 🖼️ Screenshots
+## 🚀 Supported Platforms
 
-### 📌 Integration Setup
-![Setup](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder1.png)
+AR Smart IR currently supports:
 
-### 📌 Sidebar Tool
-![Sidebar](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder2.png)
-
-### 📌 Device Builder
-![Builder](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder3.png)
-
-### 📌 IR Learning
-![Learning](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder4.png)
-
-![Learning](https://github.com/marsh4200/ar_smart_ir_builder/blob/main/images/arbuilder5.png)
+- `climate`
+- `media_player`
+- `fan`
+- `light`
 
 ---
 
-## ⚙️ Installation
+## 📡 Supported Controllers
 
-### 1. Install via HACS
-- Open **HACS**
-- Go to **Integrations**
-- Add repository:
-```
-https://github.com/marsh4200/ar_smart_ir_builder
-```
-- Install **AR Smart IR Builder**
+AR Smart IR supports multiple controller methods used in Home Assistant:
 
----
+- **Broadlink**
+- **MQTT**
+- **ESPHome**
+- **Infrared** (`infrared.*` emitter entities)
+- **Xiaomi**
+- **LOOKin**
+- **Tuya**
+- **UFO-R11**
 
-### 2. Restart Home Assistant
+The **Infrared** controller consumes an existing Home Assistant native infrared
+emitter entity. It does not expose AR Smart IR itself as an infrared emitter or
+receiver, and native infrared receiver-based learning is not supported yet.
 
----
-
-### 3. Add Integration
-Go to:
-```
-Settings → Devices & Services → Add Integration
-```
-
-Search:
-```
-AR Smart IR Builder
-```
-
-During setup you'll be asked to pick a **Controller type**:
+Controller support continues to improve, especially for newer MQTT- and raw-based workflows.
 
 ---
 
-## 📶 Controller Types
+## 🔌 ESPHome Controller Setup
 
-### Broadlink
-The original mode. Pick a `remote.*` entity from the Broadlink integration. Sending uses `remote.send_command` with a base64 code; learning uses `remote.learn_command`.
+The **ESPHome** controller sends raw IR timings to a user-defined action on your
+ESPHome node. You define the action once in your ESPHome YAML, and AR Smart IR
+calls it with the decoded `int[]` timing array.
 
-### Tasmota IR (MQTT) — for areas where Broadlink hardware is hard to source
-Talks straight to a Tasmota IR blaster over MQTT, no `remote.*` entity needed.
+### 1. ESPHome configuration
 
-**Requirements:**
-- A Tasmota device flashed with IR support (most ESP8266/ESP32-based IR blasters), with its **Topic** set under *Configuration → MQTT*
-- HA's built-in **MQTT integration** configured and pointed at the same broker your Tasmota device uses
-- For learning: IR receive enabled on the device (`SetOption58 1` on the Tasmota console if it's an unusual/AC protocol Tasmota can't natively decode, so it still returns raw timing data instead of nothing)
+Define an API action plus a `remote_transmitter` for your IR LED. If you also
+drive a 433 MHz RF transmitter from the same node, give it its own
+`remote_transmitter` with `carrier_duty_percent: 100%`:
 
-**How it works:**
-- *Send*: publishes Tasmota's `IRSend` JSON (e.g. `{"Protocol":"NEC","Bits":32,"Data":"0x20DF10EF"}`) to `cmnd/<topic>/irsend`
-- *Learn*: subscribes to `tele/<topic>/RESULT`, waits up to 25s (configurable) for the next IR signal the device receives, and stores it ready to replay
-- *Paste code*: paste Tasmota IRSend JSON directly (e.g. copied straight out of the Tasmota console log) instead of capturing
-- RF capture, available on Broadlink, isn't supported through this path — Tasmota IR is IR-only here
+```yaml
+api:
+  encryption:
+    key: ...
+  # Needed by bt_adv_proxy
+  custom_services: true
+  homeassistant_services: true
+  actions:
+    - action: send_raw_ir_command
+      variables:
+        command: int[]
+      then:
+        - remote_transmitter.transmit_raw:
+            transmitter_id: ir_transmitter
+            carrier_frequency: 38kHz      # REQUIRED for IR — see note below
+            code: !lambda 'return command;'
 
-**Known limitation:** protocols Tasmota can't decode (common on some AC remotes) fall back to raw timing arrays, the same rough edge Broadlink has with exotic remotes — you may need to re-learn a couple of times to get a clean capture.
-
----
-
-## 🧭 How to Use
-
-### Step 1 — Open Sidebar
-After installation, open:
-
-👉 **AR Smart IR Builder (Sidebar Menu)**
-
----
-
-### Step 2 — Create Profile
-- Click **New Profile**
-- Enter:
-  - Name
-  - Manufacturer
-  - Model
-  - Type:
-    - Aircon
-    - TV
-    - Fan
-    - Media Player
-
----
-
-### Step 3 — Learn Commands
-- Click **Learn Command**
-- Point remote at Broadlink
-- Capture commands like:
-  - Power
-  - Volume
-  - Input / HDMI
-  - Temperature
-  - Fan speed
-
----
-
-### Step 4 — Save Device
-- Click **Save Device**
-- Entities are created automatically
-
----
-
-### Step 5 — View in Home Assistant
-Check:
-- Developer Tools → States
-- Devices & Services
-
----
-
-## 🧠 Command Naming
-
-### Media
-```
-power
-volume_up
-volume_down
-play
-pause
-source_hdmi1
+remote_transmitter:
+  - pin:
+      number: ${RF_TX_PIN}
+    # OOK modulation for RF433 — keep duty at 100%
+    carrier_duty_percent: 100%
+    non_blocking: true
+    id: rf_transmitter
+  - pin:
+      number: ${IR_TX_PIN}
+      inverted: false
+    carrier_duty_percent: 50%             # 50% for IR LEDs
+    non_blocking: true
+    id: ir_transmitter
 ```
 
-### Aircon
-```
-cool_24
-heat_22
-fan_auto
-off
+> On older ESPHome versions the `actions:` key is named `services:`.
+
+### 2. Point AR Smart IR at the action
+
+In the AR Smart IR setup flow, select **ESPHome** as the controller and set
+**Controller data / service name** to the action exactly as it appears in Home
+Assistant (Developer Tools → Actions), including the node-name prefix — for
+example:
+
+```text
+livingroom_ir_send_raw_ir_command
 ```
 
-### Fan
-```
-fan_low
-fan_medium
-fan_high
-```
+### ⚠️ Device doesn't respond? Check the carrier frequency
+
+If there are **no errors** in the log but the AC/TV ignores the command, you are
+almost certainly **missing `carrier_frequency: 38kHz`** on `transmit_raw`.
+ESPHome defaults the carrier to `0 Hz` (no modulation), and IR receivers only
+respond to a modulated ~38 kHz carrier. Broadlink modulates internally, which is
+why the same code works there but not over a bare ESPHome `transmit_raw`. Add the
+`carrier_frequency` line and reflash the node.
 
 ---
 
-## 💾 Export
+## 🆕 What Makes AR Smart IR Different?
 
-Export location:
-```
-/config/www/ar_smart_ir_exports/
-```
+AR Smart IR modernizes the classic SmartIR-style experience by focusing on UI-driven setup, cleaner structure, and broader controller flexibility.
 
----
+### Improvements
 
-## 🗑️ Delete Profile
-
-To remove a profile:
-
-1. Open sidebar
-2. Select profile
-3. Scroll to Export section
-4. Click **Delete Profile**
-5. Confirm
-
-✔ Removes from integration completely
+- ✅ Setup through **Settings → Devices & Services**
+- ✅ Modern **Config Flow**
+- ✅ Better support for current Home Assistant versions
+- ✅ Local bundled code database
+- ✅ Improved controller flexibility
+- ✅ Support for command normalization and format conversion
+- ✅ Ongoing work for **MQTT**, **ESPHome**, and **HEX/raw** compatibility
+- ✅ Easier setup and maintenance for users and installers
+- ✅ Learn Function (BroadLink)
 
 ---
 
-## 🔌 Services
+## 🛠 Compatibility Progress
 
-- learn_and_capture
-- save_device
-- export_device
-- export_ha_scripts
-- test_command
-- delete_device
+This project started from a Broadlink-focused base, but development has expanded well beyond that.
+
+Recent work has focused on:
+
+- 📡 Improving **MQTT** command handling
+- 🔣 Better support for **HEX-based IR codes**
+- 🔄 Improving **raw conversion paths**
+- 🧪 Expanding compatibility for **Zigbee2MQTT-style workflows**
+- 🔌 Continued refinement of **ESPHome** controller support
+- 🧹 General cleanup, reliability fixes, and modernization work
+
+Some controller and device combinations may still need real-world validation, but the integration is actively moving toward broader compatibility across different IR ecosystems.
 
 ---
 
-## 👨‍💻 Credits
+## 📦 Installation
 
-Built by **AR Smart Home**
+### Install via HACS
 
----
+Click below to open the repository in HACS:
 
-## ⚠️ Notes
+[![Open your Home Assistant instance and open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=marsh4200&repository=ar_smart_ir&category=integration)
 
-This project is actively developed. Features may evolve as new hardware is tested.
+### Manual Installation
 
-Tasmota IR (MQTT) controller support was added without access to physical Tasmota hardware to test against — the MQTT topics and IRSend/IrReceived payload shapes follow Tasmota's documented behaviour, but if your device's topic naming or firmware version diverges, you may need to adjust `mqtt_controller.py`. Report back what breaks.
+Copy the integration into your Home Assistant `custom_components` directory:
+
+```text
+config/
+└── custom_components/
+    └── ar_smart_ir/
+Then restart Home Assistant.
+
+🔧 Setup
+After installation:
+
+Restart Home Assistant
+Go to Settings → Devices & Services
+Click Add Integration
+Search for AR Smart IR
+Follow the setup flow in the UI
+📡 IR Code Database
+AR Smart IR uses a bundled local IR code database stored inside the integration.
+
+Example location:
+
+custom_components/ar_smart_ir/codes/
+Each supported platform has its own folder, such as:
+
+codes/climate/
+codes/media_player/
+codes/fan/
+codes/light/
+Each device is defined with a JSON file containing controller and command information.
+
+Example structure:
+
+{
+  "manufacturer": "ExampleBrand",
+  "supportedModels": ["Model123"],
+  "supportedController": "Broadlink",
+  "commandsEncoding": "Base64",
+  "commands": {
+    "off": "JgBQAAAB...",
+    "on": "JgBQAAAB..."
+  }
+}
+Depending on the device and controller workflow, commands may use formats such as:
+
+Base64
+HEX
+Pronto
+Raw
+
+🎛️ Climate Presets (optional)
+Climate codesets can optionally declare AC presets (e.g. Eco, Quiet, Comfort on Samsung units) by adding a `presetModes` key. When present, an extra preset level sits between the fan/swing level and the temperatures:
+
+{
+  "presetModes": ["eco", "quiet"],
+  "commands": {
+    "off": "JgBQAAAB...",
+    "cool": {
+      "auto": {
+        "none": { "18": "JgBQ...", "19": "JgBQ..." },
+        "eco":  { "18": "JgBQ...", "19": "JgBQ..." }
+      }
+    }
+  }
+}
+
+The "none" preset holds the standard commands. If a preset is missing at any point in the tree, the integration falls back to "none" (or the flat temperature layout). Existing codesets without `presetModes` are completely unaffected and keep the original format.
+
+🛑 Passive Mode (optional)
+Climate entities have an optional Passive mode toggle in the setup and options flow. When enabled, AR Smart IR never re-sends a command unless something actually changed (mode, fan, swing, preset, or target temperature), and only sends the discrete "on" command when the unit is genuinely being switched on. This lets the AC unit's own built-in thermostat and hysteresis manage the temperature — AR Smart IR only transmits when you make a control change. It is off by default, so existing setups behave exactly as before.
+
+📌 Notes
+This project was originally based on and tested around Broadlink, but support has expanded significantly beyond that
+MQTT, ESPHome, HEX, and Raw workflows are actively being improved
+Some setups may still require device-specific testing depending on the IR blaster and command format
+Real-world compatibility can vary based on the quality and structure of the source code file being used
+Native Home Assistant Infrared support requires Home Assistant 2026.4.0 or newer
+🙌 Credits
+AR Smart IR is inspired by the original SmartIR project and the wider Home Assistant community.
+
+
+
+
