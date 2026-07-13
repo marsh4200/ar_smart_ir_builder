@@ -17,6 +17,11 @@ const RECOMMENDED = {
     ["Fan speed", ["fan_toggle","fan_low","fan_medium","fan_high","fan_auto"]],
     ["Swing", ["swing_toggle","swing_on","swing_off"]],
   ],
+  custom: [
+    ["Movement", ["open","close","stop"]],
+    ["Position", ["up","down","preset_1","preset_2"]],
+    ["Power", ["power","power_on","power_off"]],
+  ],
   fan: [
     ["Power", ["on","off"]],
     ["Speed", ["fan_low","fan_medium","fan_high"]],
@@ -39,11 +44,13 @@ const RECOMMENDED = {
   ],
 };
 
-const TYPE_LABELS = { climate: "Climate", fan: "Fan", media_player: "Media player", tv: "TV" };
-const TYPE_ICONS  = { climate: "❄️", fan: "🌀", media_player: "📺", tv: "📺" };
+const TYPE_LABELS = { climate: "Climate", fan: "Fan", media_player: "Media player", tv: "TV", custom: "Custom" };
+const TYPE_ICONS  = { climate: "❄️", fan: "🌀", media_player: "📺", tv: "📺", custom: "🛸" };
 
 const COMMAND_HINTS = {
   off:"Power off", on:"Power on",
+  open:"Open / extend", close:"Close / retract",
+  preset_1:"Preset position 1", preset_2:"Preset position 2",
   cool:"Cooling mode", heat:"Heating mode", dry:"Dry / dehumidify",
   auto:"Auto mode", fan_only:"Fan only",
   fan_low:"Fan low speed", fan_medium:"Fan medium speed", fan_high:"Fan high speed", fan_auto:"Fan auto",
@@ -75,6 +82,22 @@ function slugify(name) {
 // ─── Remote layout maps ────────────────────────────────────────────────────
 
 const REMOTE_LAYOUTS = {
+  custom: [
+    { type: "row", btns: [
+      { cmd: "open", icon: "\u25b2", label: "Open" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "stop", icon: "\u25a0", label: "Stop" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "close", icon: "\u25bc", label: "Close" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "power", icon: "\u23fb", label: "Power", cls: "power" },
+      { cmd: "preset_1", icon: "1", label: "Preset 1" },
+      { cmd: "preset_2", icon: "2", label: "Preset 2" },
+    ]},
+  ],
   tv: [
     { type: "row", btns: [
       { cmd: "power", icon: "⏻", label: "Power", cls: "power" },
@@ -363,6 +386,7 @@ class ARSmartIRPanel extends HTMLElement {
   .ir-callout.success { background: rgba(26,153,107,.1); border: 1px solid rgba(26,153,107,.25); }
   .ir-callout.error { background: rgba(220,50,50,.09); border: 1px solid rgba(220,50,50,.25); color: #c83030; }
   .ir-callout.learning { background: rgba(250,150,0,.09); border: 1px solid rgba(250,150,0,.3); }
+  .ir-callout.warning { background: rgba(250,150,0,.09); border: 1px solid rgba(250,150,0,.35); }
 
   /* Profile list */
   .ir-profile-list { display: grid; gap: 8px; }
@@ -718,6 +742,7 @@ class ARSmartIRPanel extends HTMLElement {
               <option value="fan">Fan</option>
               <option value="media_player">Media player</option>
               <option value="tv">TV</option>
+              <option value="custom">Custom / other (blinds, screens, gates…)</option>
             </select>
           </div>
           <div class="ir-field" id="ir-climate-style-field">
@@ -1199,16 +1224,27 @@ class ARSmartIRPanel extends HTMLElement {
       }
       this._showLearnCallout(prompt, "learning");
       this._setLearning(true);
-      await this._hass.callApi(
-        "POST",
-        "services/ar_smart_ir_builder/learn_and_capture?return_response",
-        { entry_id: entryId, device_key: key, command_name: cmdName, command_type: mode }
+      // WebSocket service call (not REST callApi): on failure the real
+      // HomeAssistantError text comes back in err.message instead of an
+      // opaque "Response error: 500".
+      const res = await this._hass.callService(
+        "ar_smart_ir_builder", "learn_and_capture",
+        { entry_id: entryId, device_key: key, command_name: cmdName, command_type: mode },
+        undefined, false, true
       );
       this._setLearning(false);
       await this._load();
       this.qs("#ir-cmd").value = "";
       this._renderPills();
-      this._showLearnCallout(`✓ "${cmdName}" learned successfully (${mode.toUpperCase()}).`, "success");
+      const dup = res?.response?.duplicate_of;
+      if (dup) {
+        this._showLearnCallout(
+          `⚠ "${cmdName}" learned (${mode.toUpperCase()}), but the signal is identical to "${dup}" — you may have pressed the same button twice.`,
+          "warning"
+        );
+      } else {
+        this._showLearnCallout(`✓ "${cmdName}" learned successfully (${mode.toUpperCase()}).`, "success");
+      }
     }, () => {
       this._setLearning(false);
       this._showLearnCallout("", "");
@@ -1458,14 +1494,24 @@ class ARSmartIRPanel extends HTMLElement {
       if (btnEl) { btnEl.classList.add("testing"); btnEl.disabled = true; }
       if (strip) { strip.className = "ir-test-strip"; strip.textContent = `Sending "${cmdName}"…`; }
 
-      await this._hass.callApi(
-        "POST",
-        "services/ar_smart_ir_builder/test_command?return_response",
-        { entry_id: entryId, device_key: key, command_name: cmdName }
+      const res = await this._hass.callService(
+        "ar_smart_ir_builder", "test_command",
+        { entry_id: entryId, device_key: key, command_name: cmdName },
+        undefined, false, true
       );
 
+      const r = res?.response || {};
+      const isRf = typeof r.code_type === "string" && r.code_type.startsWith("rf");
+      const repeats = r.repeats || 1;
+      let okMsg = `✓ "${cmdName}" sent`;
+      if (isRf) okMsg += ` (RF${repeats > 1 ? ` ×${repeats}` : ""})`;
+      else if (repeats > 1) okMsg += ` (×${repeats})`;
+      if (isRf && repeats === 1) {
+        okMsg += ` — RF devices (blinds, screens, gates) often ignore a single burst. If nothing moved, set a repeat policy for "${cmdName}" in Repeat settings (e.g. ×3, 300ms) and test again.`;
+      }
+
       if (btnEl) { btnEl.classList.remove("testing"); btnEl.classList.add("sent"); btnEl.disabled = false; setTimeout(() => btnEl?.classList.remove("sent"), 1200); }
-      if (strip) { strip.className = "ir-test-strip ok"; strip.textContent = `✓ "${cmdName}" sent successfully`; }
+      if (strip) { strip.className = "ir-test-strip ok"; strip.textContent = okMsg; }
     } catch (err) {
       if (btnEl) { btnEl.classList.remove("testing"); btnEl.disabled = false; }
       const msg = err?.body?.message || err?.message || String(err);

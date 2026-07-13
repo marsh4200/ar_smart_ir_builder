@@ -296,6 +296,14 @@ def build_codeset(
     dtype = canonical_device_type(profile.get("device_type"))
     platform = _PLATFORM_MAP.get(dtype)
     if platform is None:
+        if dtype == "custom":
+            raise SmartIRExportError(
+                "Custom profiles (blinds, screens, gates, ...) can't be exported "
+                "as an ar_smart_ir codeset — ar_smart_ir only understands "
+                "climate, fan and media player devices. Use \"Export HA scripts\" "
+                "instead, then wrap the generated scripts in a template cover/"
+                "switch in Home Assistant."
+            )
         raise SmartIRExportError(
             f"Device type '{dtype or 'unknown'}' has no ar_smart_ir equivalent "
             "(supported: climate, fan, media_player/tv)."
