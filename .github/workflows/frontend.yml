@@ -1,0 +1,32 @@
+name: Frontend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  panel:
+    name: Panel checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: panel.js syntax
+        run: node --check custom_components/ar_smart_ir_builder/www/panel.js
+
+      - name: Version + cache-buster guard
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python .github/scripts/frontend_guard.py
