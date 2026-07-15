@@ -498,7 +498,12 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 controller = resolve_controller_type(entry)
 
         try:
-            platform, payload, report = build_codeset(device_key, device, controller)
+            platform, payload, report = build_codeset(
+                device_key,
+                device,
+                controller,
+                temperature_unit=hass.config.units.temperature_unit,
+            )
         except SmartIRExportError as err:
             raise HomeAssistantError(str(err)) from err
 

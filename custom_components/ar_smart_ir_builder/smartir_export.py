@@ -59,6 +59,30 @@ def _str_code(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _normalise_temperature_unit(value: Any) -> str:
+    """Map a loose unit onto the "C"/"F" that ar_smart_ir expects."""
+    token = str(value or "").strip().upper().lstrip("\u00b0")
+    if token in {"F", "FAHRENHEIT", "DEGF"}:
+        return "F"
+    return "C"
+
+
+def _distinct_fingerprints(
+    fingerprints: dict[str, str], names: list[str]
+) -> set[str] | None:
+    """Signal identities for `names`, or None if any is unknown.
+
+    None means "can't tell" - never guess from a partial picture.
+    """
+    seen: set[str] = set()
+    for name in names:
+        fp = fingerprints.get(name)
+        if not fp:
+            return None
+        seen.add(fp)
+    return seen
+
+
 def _prefixed_values(commands: dict[str, Any], prefix: str) -> list[str]:
     """Values after `prefix`, in learn (insertion) order — preserves the
     low->high ordering fan/speed lists rely on."""
@@ -72,7 +96,9 @@ def _prefixed_values(commands: dict[str, Any], prefix: str) -> list[str]:
 # --------------------------------------------------------------------------- #
 # climate
 # --------------------------------------------------------------------------- #
-def _build_climate(commands: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _build_climate(
+    commands: dict[str, Any], temperature_unit: str = "C"
+) -> tuple[dict[str, Any], dict[str, Any]]:
     off = _str_code(commands.get("off"))
     if off is None:
         raise SmartIRExportError(
@@ -132,6 +158,10 @@ def _build_climate(commands: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
             tree[mode] = fan_branch
 
     fields: dict[str, Any] = {
+        # Declared explicitly so ar_smart_ir doesn't have to infer it from the
+        # range. A Fahrenheit remote learned as 65-86 was previously exported
+        # bare and then read back as Celsius (ar_smart_ir issue #33).
+        "temperatureUnit": temperature_unit,
         "minTemperature": min(temperatures),
         "maxTemperature": max(temperatures),
         "precision": 1,
@@ -165,15 +195,104 @@ def _build_climate(commands: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
 # --------------------------------------------------------------------------- #
 # fan
 # --------------------------------------------------------------------------- #
-def _build_fan(commands: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def _toggle_power_code(
+    commands: dict[str, Any], fingerprints: dict[str, str]
+) -> str | None:
+    """The single button that powers a toggle remote on and off."""
+    for name in ("power", "power_toggle", "toggle", "onoff", "on_off"):
+        code = _str_code(commands.get(name))
+        if code:
+            return code
+
+    on = _str_code(commands.get("on"))
+    off = _str_code(commands.get("off"))
+
+    # on and off learned from the same physical button -> it's a toggle.
+    if on and off and _distinct_fingerprints(fingerprints, ["on", "off"]) == {
+        fingerprints.get("on")
+    }:
+        return on
+
+    return on or off
+
+
+def _toggle_oscillate_code(commands: dict[str, Any]) -> str | None:
+    for name in ("oscillate", "swing", "swing_on", "oscillate_on"):
+        code = _str_code(commands.get(name))
+        if code:
+            return code
+    return None
+
+
+def _build_fan(
+    commands: dict[str, Any], fingerprints: dict[str, str] | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    fingerprints = fingerprints or {}
     speeds = _prefixed_values(commands, "fan_")
     if not speeds:
         raise SmartIRExportError(
             "Fan export needs at least one fan_* speed command, but none was "
-            "learned."
+            "learned. If your remote has a single speed button that cycles "
+            "through the speeds, learn it once per speed (fan_low, fan_medium, "
+            "fan_high) and the export will detect the cycle automatically."
         )
 
-    cmd: dict[str, Any] = {}
+    notes: list[str] = []
+
+    # --- toggle/cycle remote detection ----------------------------------- #
+    # One physical speed button learned into every fan_* slot: the codes are
+    # byte-identical, so a discrete codeset would send the same pulse for
+    # every speed and never actually reach the requested one. ar_smart_ir's
+    # toggleMode drives it properly by counting presses instead.
+    speed_names = [f"fan_{s}" for s in speeds if _str_code(commands.get(f"fan_{s}"))]
+    speed_fps = _distinct_fingerprints(fingerprints, speed_names)
+    is_cycle = len(speed_names) > 1 and speed_fps is not None and len(speed_fps) == 1
+
+    if is_cycle:
+        cycle_code = _str_code(commands.get(speed_names[0]))
+        power_code = _toggle_power_code(commands, fingerprints)
+
+        if power_code is None:
+            raise SmartIRExportError(
+                "This looks like a cycle remote (one speed button for all "
+                "speeds), but no power button was learned. Learn the power "
+                "button as 'power' (or 'on'), then export again."
+            )
+
+        if _distinct_fingerprints(fingerprints, ["fan_" + speeds[0]]) == \
+                _distinct_fingerprints(fingerprints, ["on"]):
+            notes.append(
+                "The power and speed buttons look identical - check you "
+                "learned two different buttons."
+            )
+
+        cmd: dict[str, Any] = {"power": power_code, "speed_cycle": cycle_code}
+
+        oscillate = _toggle_oscillate_code(commands)
+        if oscillate:
+            cmd["oscillate"] = oscillate
+
+        fields = {
+            "toggleMode": True,
+            "powerOnSpeed": speeds[0],
+            "speed": speeds,
+            "commands": cmd,
+        }
+
+        notes.append(
+            f"Detected a toggle/cycle remote: one power button and one speed "
+            f"button cycling {' -> '.join(speeds)}. Exported with "
+            f"\"toggleMode\": true - ar_smart_ir counts presses to reach the "
+            f"speed you pick, assuming it powers on at '{speeds[0]}'. If your "
+            f"fan starts on a different speed, change \"powerOnSpeed\"."
+        )
+        if not oscillate:
+            notes.append("No oscillate/swing button learned; oscillation won't work.")
+
+        return fields, {"notes": notes}
+
+    # --- discrete remote (a distinct code per speed) ---------------------- #
+    cmd = {}
     off = _str_code(commands.get("off"))
     if off:
         cmd["off"] = off
@@ -188,9 +307,26 @@ def _build_fan(commands: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]
             break
 
     fields = {"speed": speeds, "commands": cmd}
-    report: dict[str, Any] = {}
+
     if off is None:
-        report["notes"] = ["No 'off' command learned; turning the fan off won't work."]
+        notes.append("No 'off' command learned; turning the fan off won't work.")
+    elif _distinct_fingerprints(fingerprints, ["on", "off"]) == {fingerprints.get("off")} \
+            and fingerprints.get("off"):
+        notes.append(
+            "'on' and 'off' were learned from the same button, so this fan's "
+            "power is a toggle. Each speed still has its own code, so speeds "
+            "will work, but Home Assistant may get out of sync with the fan's "
+            "real on/off state."
+        )
+    if speed_fps is not None and len(speed_fps) < len(speed_names):
+        notes.append(
+            "Some speed buttons share the same code - those speeds will "
+            "behave identically."
+        )
+
+    report: dict[str, Any] = {}
+    if notes:
+        report["notes"] = notes
     return fields, report
 
 
@@ -285,7 +421,10 @@ def _build_media_player(
 # dispatcher
 # --------------------------------------------------------------------------- #
 def build_codeset(
-    device_key: str, device: dict[str, Any], controller: str
+    device_key: str,
+    device: dict[str, Any],
+    controller: str,
+    temperature_unit: Any = None,
 ) -> tuple[str, dict[str, Any], dict[str, Any]]:
     """Return (platform, codeset_payload, report).
 
@@ -326,10 +465,20 @@ def build_codeset(
         "commandsEncoding": encoding_label,
     }
 
+    fingerprints = profile.get("command_fingerprints")
+    if not isinstance(fingerprints, dict):
+        fingerprints = {}
+
     if platform == "climate":
-        fields, report = _build_climate(commands)
+        # A unit stamped on the profile wins over the caller's current setting.
+        fields, report = _build_climate(
+            commands,
+            _normalise_temperature_unit(
+                profile.get("temperature_unit") or temperature_unit
+            ),
+        )
     elif platform == "fan":
-        fields, report = _build_fan(commands)
+        fields, report = _build_fan(commands, fingerprints)
     else:
         fields, report = _build_media_player(commands)
 
