@@ -45,6 +45,8 @@ _SMARTIR_PLATFORM_LABELS = {
     "media_player": "Media Player",
 }
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
 LEARN_SCHEMA = vol.Schema(
     {
         vol.Required("entry_id"): cv.string,
@@ -327,7 +329,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=32",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=33",
                 }
             },
             require_admin=True,

@@ -19,7 +19,7 @@
       },
       "tasmota": {
         "title": "Tasmota IR (MQTT)",
-        "description": "The Tasmota device's MQTT topic - whatever you set as 'Topic' under Configuration -> MQTT on the device. Commands are published to cmnd/<topic>/irsend.",
+        "description": "The Tasmota device's MQTT topic - whatever you set as 'Topic' under Configuration -> MQTT on the device. Commands are published to cmnd/{topic}/irsend, using the topic you enter here.",
         "data": {
           "mqtt_base_topic": "MQTT base topic"
         }
