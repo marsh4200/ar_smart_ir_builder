@@ -1,6 +1,9 @@
 {
   "domain": "ar_smart_ir_builder",
   "name": "AR Smart IR Builder",
+  "after_dependencies": [
+    "mqtt"
+  ],
   "codeowners": [
     "@marsh4200"
   ],
@@ -9,9 +12,6 @@
     "frontend",
     "http",
     "panel_custom"
-  ],
-  "after_dependencies": [
-    "mqtt"
   ],
   "documentation": "https://github.com/marsh4200/ar_smart_ir_builder",
   "iot_class": "local_push",
