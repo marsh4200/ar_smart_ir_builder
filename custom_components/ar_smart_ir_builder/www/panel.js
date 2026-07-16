@@ -469,16 +469,101 @@ class ARSmartIRPanel extends HTMLElement {
   .ir-mode-seg button:active { transform: scale(.97); }
   .ir-mode-hint { font-size: 12px; color: var(--secondary-text-color); margin: 6px 0 12px; line-height: 1.45; }
 
-  /* Spinner */
+  /* ══════════════════════════════════════════════════════════════════════
+     Animation pack — 10 keyframes. Each one is wired to a real UI moment;
+     nothing here is decorative-only. Search a name to find its trigger.
+     ══════════════════════════════════════════════════════════════════════ */
+
+  /* 1 — ir-spin: in-button spinner while a request is in flight */
+  @keyframes ir-spin { to { transform: rotate(360deg); } }
+  /* 2 — ir-pulse: "we're waiting on you" breathing */
+  @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+  /* 3 — ir-panel-in: step panel enter */
+  @keyframes ir-panel-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  /* 4 — ir-callout-in: callout drop-in */
+  @keyframes ir-callout-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  /* 5 — ir-shake: error callout */
+  @keyframes ir-shake {
+    10%, 90% { transform: translateX(-2px); }
+    20%, 80% { transform: translateX(3px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+  }
+  /* 6 — ir-wave: IR emission rings off the Learn button while capturing */
+  @keyframes ir-wave { 0% { transform: scale(1); opacity: .5; } 100% { transform: scale(1.85); opacity: 0; } }
+  /* 7 — ir-pop: a command was just captured */
+  @keyframes ir-pop {
+    0% { transform: scale(1); } 35% { transform: scale(1.16); }
+    60% { transform: scale(.96); } 100% { transform: scale(1); }
+  }
+  /* 8 — ir-shimmer: coverage bar sweep when the number moves */
+  @keyframes ir-shimmer { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
+  /* 9 — ir-flash: remote button confirm ripple */
+  @keyframes ir-flash {
+    0% { box-shadow: 0 0 0 0 rgba(26,153,107,.5); }
+    100% { box-shadow: 0 0 0 14px rgba(26,153,107,0); }
+  }
+  /* 10 — ir-rise: staggered list entry */
+  @keyframes ir-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+  /* ── Bindings ── */
+
+  /* 1 */
   .ir-spinner {
     display: inline-block; width: 14px; height: 14px;
     border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
     border-radius: 50%; animation: ir-spin .6s linear infinite;
     vertical-align: middle; margin-right: 6px;
   }
-  @keyframes ir-spin { to { transform: rotate(360deg); } }
-  @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+  /* 2 — applied by _showLearnCallout() while type === "learning" */
   .ir-learning-pulse { animation: ir-pulse 1.2s ease-in-out infinite; }
+
+  /* 3 — _setStep() toggles .active */
+  .ir-panel.active { animation: ir-panel-in .26s ease-out both; }
+
+  /* 4 + 5 — _showCallout() / _showLearnCallout() */
+  .ir-anim-in { animation: ir-callout-in .22s ease-out both; }
+  .ir-anim-shake { animation: ir-callout-in .22s ease-out both, ir-shake .4s ease-in-out .06s both; }
+
+  /* 6 — _setLearning(true) adds .learning */
+  #ir-learn-btn { position: relative; }
+  #ir-learn-btn.learning:disabled { opacity: 1; }
+  #ir-learn-btn.learning::before,
+  #ir-learn-btn.learning::after {
+    content: ""; position: absolute; inset: -1px;
+    border-radius: 999px; border: 2px solid var(--primary-color);
+    animation: ir-wave 1.5s ease-out infinite;
+    pointer-events: none;
+  }
+  #ir-learn-btn.learning::after { animation-delay: .75s; }
+
+  /* 7 — _renderPills() tags the command that just came back */
+  .ir-pill.just-learned { animation: ir-pop .45s ease-out both; }
+
+  /* 8 — _updateStats() adds .filling when the percentage changes */
+  .ir-cov-fill { position: relative; overflow: hidden; }
+  .ir-cov-fill.filling::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 45%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent);
+    animation: ir-shimmer .9s ease-out;
+  }
+
+  /* 9 — _renderTestRemote() adds .sent on a successful test send */
+  .ir-rbtn.sent { animation: ir-flash .6s ease-out; }
+
+  /* 10 — _renderProfileList() / _renderChecklist() stagger via --i */
+  .ir-rise { animation: ir-rise .3s ease-out both; animation-delay: calc(var(--i, 0) * 35ms); }
+
+  /* Respect the OS setting. Spinner is exempt — a frozen spinner reads as a hang. */
+  @media (prefers-reduced-motion: reduce) {
+    .ir-panel.active, .ir-anim-in, .ir-anim-shake, .ir-rise,
+    .ir-learning-pulse, .ir-pill.just-learned, .ir-rbtn.sent,
+    .ir-rbtn.testing, .ir-cov-fill.filling::after,
+    #ir-learn-btn.learning::before, #ir-learn-btn.learning::after {
+      animation: none !important;
+    }
+    .ir-cov-fill { transition: none !important; }
+  }
 
   /* Delete confirm */
   .ir-delete-confirm {
@@ -654,7 +739,7 @@ class ARSmartIRPanel extends HTMLElement {
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v2.2.0</div>
+      <div class="ir-version">v1.8.1</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -1108,7 +1193,7 @@ class ARSmartIRPanel extends HTMLElement {
       return;
     }
 
-    keys.forEach(key => {
+    keys.forEach((key, idx) => {
       const d = devices[key];
       const icon = TYPE_ICONS[d.device_type] || "📡";
       const cmdCount = Object.keys(d.commands || {}).length;
@@ -1118,7 +1203,8 @@ class ARSmartIRPanel extends HTMLElement {
       const pct = rec.length ? Math.round(covered / rec.length * 100) : 0;
 
       const item = document.createElement("div");
-      item.className = "ir-profile-item" + (key === this._currentKey ? " selected" : "");
+      item.className = "ir-profile-item ir-rise" + (key === this._currentKey ? " selected" : "");
+      item.style.setProperty("--i", idx);
       item.innerHTML = `
         <div class="ir-profile-icon">${icon}</div>
         <div style="flex:1;min-width:0">
@@ -1235,6 +1321,7 @@ class ARSmartIRPanel extends HTMLElement {
       this._setLearning(false);
       await this._load();
       this.qs("#ir-cmd").value = "";
+      this._justLearned = cmdName;
       this._renderPills();
       const dup = res?.response?.duplicate_of;
       if (dup) {
@@ -1282,6 +1369,7 @@ class ARSmartIRPanel extends HTMLElement {
   _setLearning(on) {
     const btn = this.qs("#ir-learn-btn");
     btn.disabled = on;
+    btn.classList.toggle("learning", on);
     btn.innerHTML = on ? `<span class="ir-spinner"></span>Learning…` : "Learn";
   }
 
@@ -1800,7 +1888,8 @@ class ARSmartIRPanel extends HTMLElement {
       cmds.forEach(cmd => {
         const pill = document.createElement("button");
         pill.type = "button";
-        pill.className = "ir-pill" + (learned.has(cmd) ? " learned" : "");
+        pill.className = "ir-pill" + (learned.has(cmd) ? " learned" : "")
+          + (cmd === this._justLearned ? " just-learned" : "");
         pill.textContent = cmd;
         pill.title = COMMAND_HINTS[cmd] || cmd;
         pill.onclick = () => { this.qs("#ir-cmd").value = cmd; this.qs("#ir-cmd").focus(); };
@@ -1808,6 +1897,7 @@ class ARSmartIRPanel extends HTMLElement {
       });
       container.appendChild(section);
     });
+    this._justLearned = null;
     this._updateStats(learned);
 
     const dl = this.qs("#ir-cmd-list");
@@ -1829,7 +1919,15 @@ class ARSmartIRPanel extends HTMLElement {
     if (el("#ir-stat-cov")) el("#ir-stat-cov").textContent = `${covered} / ${rec.length}`;
     if (el("#ir-stat-name")) el("#ir-stat-name").textContent =
       this.qs("#ir-name")?.value || humanize(this._currentKey) || "—";
-    if (el("#ir-cov-fill")) el("#ir-cov-fill").style.width = pct + "%";
+    const fill = el("#ir-cov-fill");
+    if (fill) {
+      if (fill.dataset.pct !== String(pct)) {
+        fill.dataset.pct = String(pct);
+        this._anim(fill, "filling");
+        setTimeout(() => fill.classList.remove("filling"), 900);
+      }
+      fill.style.width = pct + "%";
+    }
   }
 
   _renderChecklist() {
@@ -1837,10 +1935,11 @@ class ARSmartIRPanel extends HTMLElement {
     if (!container) return;
     const learned = new Set(this._currentCommands());
     container.innerHTML = "";
-    this._allRecommended().forEach(cmd => {
+    this._allRecommended().forEach((cmd, idx) => {
       const done = learned.has(cmd);
       const item = document.createElement("div");
-      item.className = "ir-cl-item" + (done ? " learned" : "");
+      item.className = "ir-cl-item ir-rise" + (done ? " learned" : "");
+      item.style.setProperty("--i", idx);
       item.innerHTML = `
         <div>
           <div class="ir-cl-name">${cmd}</div>
@@ -2059,6 +2158,7 @@ class ARSmartIRPanel extends HTMLElement {
     const el = this.qs("#ir-callout");
     el.textContent = msg;
     el.className = `ir-callout show ${type}`;
+    this._anim(el, type === "error" ? "ir-anim-shake" : "ir-anim-in");
   }
   _hideCallout() {
     const el = this.qs("#ir-callout");
@@ -2067,10 +2167,11 @@ class ARSmartIRPanel extends HTMLElement {
   _showLearnCallout(msg, type) {
     const el = this.qs("#ir-learn-callout");
     if (!el) return;
-    if (!msg) { el.style.display = "none"; return; }
+    if (!msg) { el.style.display = "none"; el.className = "ir-callout"; return; }
     el.textContent = msg;
-    el.className = `ir-callout ${type}`;
+    el.className = `ir-callout ${type}` + (type === "learning" ? " ir-learning-pulse" : "");
     el.style.display = "block";
+    this._anim(el, type === "error" ? "ir-anim-shake" : "ir-anim-in");
   }
 
   // ── Run wrapper ───────────────────────────────────────────────────────────
@@ -2146,6 +2247,18 @@ class ARSmartIRPanel extends HTMLElement {
   // ── Utility ───────────────────────────────────────────────────────────────
 
   qs(sel) { return this.querySelector(sel); }
+
+  /**
+   * Re-trigger a CSS animation class on an element that may already carry it.
+   * Removing the class, forcing a reflow, then re-adding is the only reliable
+   * way to restart a keyframe animation on an element that never left the DOM.
+   */
+  _anim(el, cls) {
+    if (!el) return;
+    el.classList.remove(cls);
+    void el.offsetWidth;
+    el.classList.add(cls);
+  }
 }
 
 if (!customElements.get("ar-smart-ir-panel")) {

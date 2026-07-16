@@ -33,7 +33,7 @@ async def _async_remove_entity(hass: HomeAssistant, entity) -> None:
         if not remaining:
             device_reg.async_remove_device(entity.device_entry.id)
 
-from .const import DATA_STORE, DEFAULT_TITLE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_controller_available, send_with_policy
+from .const import DATA_STORE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_controller_available, send_with_policy
 from .storage import ARSmartIRStore, normalize_device
 
 CLIMATE_DEVICE_TYPES = {"climate", "ac", "aircon", "air_conditioner"}
