@@ -739,7 +739,7 @@ class ARSmartIRPanel extends HTMLElement {
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.8.1</div>
+      <div class="ir-version">v1.9.0</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
