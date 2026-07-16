@@ -554,14 +554,28 @@ class ARSmartIRPanel extends HTMLElement {
   /* 10 — _renderProfileList() / _renderChecklist() stagger via --i */
   .ir-rise { animation: ir-rise .3s ease-out both; animation-delay: calc(var(--i, 0) * 35ms); }
 
-  /* Respect the OS setting. Spinner is exempt — a frozen spinner reads as a hang. */
+  /* Reduced motion: degrade, don't disappear.
+     The setting is about *movement* — slides, scales, sweeps. Those get
+     opacity-only substitutes here rather than being switched off, so the
+     feedback still lands and nothing travels across the screen.
+     ir-pulse, ir-flash and ir-spin involve no movement (opacity, box-shadow,
+     and a spinner that must spin to mean anything) and are left alone. */
+  @keyframes ir-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes ir-ring-fade { 0%, 100% { opacity: 0; } 50% { opacity: .5; } }
+
   @media (prefers-reduced-motion: reduce) {
-    .ir-panel.active, .ir-anim-in, .ir-anim-shake, .ir-rise,
-    .ir-learning-pulse, .ir-pill.just-learned, .ir-rbtn.sent,
-    .ir-rbtn.testing, .ir-cov-fill.filling::after,
-    #ir-learn-btn.learning::before, #ir-learn-btn.learning::after {
-      animation: none !important;
+    /* slide / rise / shake → plain fade */
+    .ir-panel.active, .ir-anim-in, .ir-anim-shake, .ir-rise {
+      animation: ir-fade-in .2s ease-out both !important;
     }
+    .ir-rise { animation-delay: calc(var(--i, 0) * 25ms) !important; }
+    /* scale pop → fade */
+    .ir-pill.just-learned { animation: ir-fade-in .3s ease-out both !important; }
+    /* expanding rings → one static ring that breathes */
+    #ir-learn-btn.learning::before { animation: ir-ring-fade 1.6s ease-in-out infinite !important; }
+    #ir-learn-btn.learning::after { animation: none !important; }
+    /* a sweep has no still equivalent — the bar width already tells the story */
+    .ir-cov-fill.filling::after { animation: none !important; }
     .ir-cov-fill { transition: none !important; }
   }
 
@@ -2263,4 +2277,13 @@ class ARSmartIRPanel extends HTMLElement {
 
 if (!customElements.get("ar-smart-ir-panel")) {
   customElements.define("ar-smart-ir-panel", ARSmartIRPanel);
+
+  // Diagnostic. If the animations ever look absent, this answers both questions
+  // at once: which panel build is actually loaded (stale JS?), and whether the
+  // OS has asked us to cut the motion.
+  console.info(
+    "[ar_smart_ir_builder] panel build %s | reduced-motion: %s",
+    document.querySelector(".ir-version")?.textContent || "unknown",
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "ON (animations degraded to fades)" : "off"
+  );
 }
