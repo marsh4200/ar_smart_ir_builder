@@ -16,7 +16,6 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
-    CONF_ENTRY_ID,
     CONF_DEVICES,
     CONF_REMOTE_ENTITY,
     DATA_STORE,
@@ -197,13 +196,13 @@ def _build_ha_scripts_export(
             payload = commands.get(cmd_name, "")
             lines.append(f"{script_id}:")
             lines.append(f"  alias: \"{name} — {friendly}\"")
-            lines.append(f"  icon: mdi:remote")
-            lines.append(f"  sequence:")
-            lines.append(f"    - service: mqtt.publish")
-            lines.append(f"      data:")
+            lines.append("  icon: mdi:remote")
+            lines.append("  sequence:")
+            lines.append("    - service: mqtt.publish")
+            lines.append("      data:")
             lines.append(f"        topic: \"cmnd/{topic}/irsend\"")
             lines.append(f"        payload: '{payload}'")
-            lines.append(f"  mode: single")
+            lines.append("  mode: single")
             lines.append("")
     else:
         remote_hint = profile.get("broadlink_device") or device_key
@@ -214,15 +213,15 @@ def _build_ha_scripts_export(
             friendly = cmd_name.replace("_", " ").title()
             lines.append(f"{script_id}:")
             lines.append(f"  alias: \"{name} — {friendly}\"")
-            lines.append(f"  icon: mdi:remote")
-            lines.append(f"  sequence:")
-            lines.append(f"    - service: remote.send_command")
-            lines.append(f"      target:")
-            lines.append(f"        entity_id: remote.REPLACE_WITH_YOUR_REMOTE_ENTITY")
-            lines.append(f"      data:")
+            lines.append("  icon: mdi:remote")
+            lines.append("  sequence:")
+            lines.append("    - service: remote.send_command")
+            lines.append("      target:")
+            lines.append("        entity_id: remote.REPLACE_WITH_YOUR_REMOTE_ENTITY")
+            lines.append("      data:")
             lines.append(f"        device: \"{remote_hint}\"")
             lines.append(f"        command: \"{cmd_name}\"")
-            lines.append(f"  mode: single")
+            lines.append("  mode: single")
             lines.append("")
 
     return "\n".join(lines)
@@ -328,7 +327,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=31",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=32",
                 }
             },
             require_admin=True,
