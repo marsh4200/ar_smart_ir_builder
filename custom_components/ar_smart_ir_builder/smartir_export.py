@@ -29,6 +29,10 @@ _PLATFORM_MAP = {
     "fan": "fan",
     "media_player": "media_player",
     "tv": "media_player",
+    "projector": "media_player",
+    "receiver": "media_player",
+    "soundbar": "media_player",
+    "decoder": "media_player",
 }
 
 _CLIMATE_MODES = ["cool", "heat", "dry", "fan_only", "auto"]

@@ -1,5 +1,11 @@
-// AR Smart IR Builder — panel.js v2.2.0
-// Full rebuild: test commands, HA script export, polished remote UI
+// AR Smart IR Builder — panel.js v2.3.0
+// Adds: projector / AV receiver / soundbar / decoder device types with brand
+// presets, a pre-learn remote preview, and a user-facing motion override
+// (see _applyMotionPref — the animation pack used to be silently killed by
+// the OS reduced-motion setting with no way to say otherwise).
+
+const MOTION_PREF_KEY = "ar_smart_ir_builder.motion";
+const PANEL_BUILD = "2.3.0";
 
 const RECOMMENDED = {
   climate: [
@@ -35,17 +41,60 @@ const RECOMMENDED = {
     ["Navigation", ["home","back","menu","ok","up","down","left","right"]],
     ["Sources", ["source_hdmi1","source_hdmi2","netflix","youtube"]],
   ],
+  projector: [
+    ["Power", ["power","power_on","power_off"]],
+    ["Sources", ["source_hdmi1","source_hdmi2","source_vga","source_video","source"]],
+    ["Picture", ["blank","freeze","aspect","image_mode","eco_mode"]],
+    ["Geometry", ["keystone_up","keystone_down","zoom_in","zoom_out","focus_near","focus_far"]],
+    ["Navigation", ["menu","ok","up","down","left","right","back","info"]],
+    ["Volume", ["volume_up","volume_down","mute"]],
+  ],
+  receiver: [
+    ["Power", ["power","power_on","power_off"]],
+    ["Volume", ["volume_up","volume_down","mute"]],
+    ["Sources", ["source_hdmi1","source_hdmi2","source_hdmi3","source_hdmi4","source_tv","source_bd","source_cd","source_tuner","source_aux","source_bluetooth"]],
+    ["Sound", ["sound_mode","surround","stereo","direct","night_mode"]],
+    ["Tone", ["bass_up","bass_down","treble_up","treble_down"]],
+    ["Navigation", ["menu","ok","up","down","left","right","back","info"]],
+  ],
+  soundbar: [
+    ["Power", ["power","power_on","power_off"]],
+    ["Volume", ["volume_up","volume_down","mute"]],
+    ["Sources", ["source_tv","source_hdmi","source_optical","source_bluetooth","source_aux"]],
+    ["Sound", ["sound_mode","surround_on","surround_off","night_mode"]],
+    ["Tone", ["bass_up","bass_down","treble_up","treble_down"]],
+    ["Playback", ["play","pause","next","previous"]],
+  ],
+  decoder: [
+    ["Power", ["power","power_on","power_off"]],
+    ["Channels", ["channel_up","channel_down","last_channel"]],
+    ["Keypad", ["num_1","num_2","num_3","num_4","num_5","num_6","num_7","num_8","num_9","num_0"]],
+    ["Navigation", ["home","guide","menu","ok","up","down","left","right","back","exit","info"]],
+    ["PVR", ["record","play","pause","stop","rewind","forward"]],
+    ["Colour keys", ["red","green","yellow","blue"]],
+    ["Volume", ["volume_up","volume_down","mute"]],
+  ],
   tv: [
     ["Power", ["power","power_on","power_off"]],
     ["Volume", ["volume_up","volume_down","mute"]],
     ["Channels", ["channel_up","channel_down"]],
     ["Navigation", ["home","back","menu","ok","up","down","left","right"]],
-    ["Sources & apps", ["source_hdmi1","source_hdmi2","source_tv","netflix","youtube"]],
+    // The tv REMOTE_LAYOUT has always drawn these three; without them here the
+    // checklist never asked for them, so they were permanently stuck greyed out.
+    ["Playback", ["play","pause","stop"]],
+    ["Sources & apps", ["source","source_hdmi1","source_hdmi2","source_tv","netflix","youtube"]],
   ],
 };
 
-const TYPE_LABELS = { climate: "Climate", fan: "Fan", media_player: "Media player", tv: "TV", custom: "Custom" };
-const TYPE_ICONS  = { climate: "❄️", fan: "🌀", media_player: "📺", tv: "📺", custom: "🛸" };
+const TYPE_LABELS = {
+  climate: "Climate", fan: "Fan", media_player: "Media player", tv: "TV",
+  projector: "Projector", receiver: "AV receiver", soundbar: "Soundbar",
+  decoder: "Decoder / set-top box", custom: "Custom",
+};
+const TYPE_ICONS = {
+  climate: "❄️", fan: "🌀", media_player: "📺", tv: "📺",
+  projector: "📽️", receiver: "🔊", soundbar: "🎚️", decoder: "📡", custom: "🛸",
+};
 
 const COMMAND_HINTS = {
   off:"Power off", on:"Power on",
@@ -70,7 +119,241 @@ const COMMAND_HINTS = {
   temp_up:"Temperature up (single step)", temp_down:"Temperature down (single step)",
   fan_toggle:"Fan speed button — cycles speeds on each press",
   swing_toggle:"Swing button — toggles on each press",
+  temp_16:"Set 16°C", temp_18:"Set 18°C", temp_20:"Set 20°C", temp_22:"Set 22°C",
+  temp_24:"Set 24°C", temp_26:"Set 26°C", temp_28:"Set 28°C", temp_30:"Set 30°C",
+
+  // Projector
+  source:"Source / input button — cycles inputs on each press",
+  source_vga:"VGA / PC input", source_video:"Composite / AV input",
+  blank:"Blank / AV mute — kills the image without powering down",
+  freeze:"Freeze frame", aspect:"Aspect ratio", image_mode:"Picture / display mode",
+  eco_mode:"Eco / lamp power mode",
+  keystone_up:"Keystone +", keystone_down:"Keystone −",
+  zoom_in:"Zoom in", zoom_out:"Zoom out",
+  focus_near:"Focus near", focus_far:"Focus far",
+  info:"Info / status",
+
+  // AV receiver / soundbar
+  source_hdmi3:"HDMI 3", source_hdmi4:"HDMI 4", source_hdmi:"HDMI input",
+  source_bd:"Blu-ray / DVD input", source_cd:"CD input", source_tuner:"Tuner / radio",
+  source_aux:"AUX input", source_bluetooth:"Bluetooth input", source_optical:"Optical input",
+  sound_mode:"Sound / DSP mode — cycles on each press",
+  surround:"Surround mode", surround_on:"Surround on", surround_off:"Surround off",
+  stereo:"Stereo / 2ch mode", direct:"Direct / pure mode", night_mode:"Night mode",
+  bass_up:"Bass +", bass_down:"Bass −", treble_up:"Treble +", treble_down:"Treble −",
+
+  // Decoder / set-top box
+  last_channel:"Last / previous channel",
+  num_0:"Keypad 0", num_1:"Keypad 1", num_2:"Keypad 2", num_3:"Keypad 3", num_4:"Keypad 4",
+  num_5:"Keypad 5", num_6:"Keypad 6", num_7:"Keypad 7", num_8:"Keypad 8", num_9:"Keypad 9",
+  guide:"TV guide / EPG", exit:"Exit",
+  record:"Record", rewind:"Rewind", forward:"Fast forward",
+  red:"Red key", green:"Green key", yellow:"Yellow key", blue:"Blue key",
 };
+
+
+/* ════════════════════════════════════════════════════════════════════════
+   Brand presets.
+
+   A preset is a *template*, not a codeset — it never contains IR codes. All
+   it does is tell the panel which buttons that family of remote actually has,
+   so the checklist and the preview match the plastic in your hand instead of
+   a generic guess. You still learn every code yourself.
+
+   `groups` is the same shape as RECOMMENDED (title -> command names) and
+   replaces the type default when set. `layout` is the same shape as
+   REMOTE_LAYOUTS and replaces the type default when set. Omit either to
+   inherit. `manufacturer` auto-fills the Advanced field on selection.
+   ════════════════════════════════════════════════════════════════════════ */
+const PRESETS = {
+  projector: [
+    { id: "generic", label: "Generic projector" },
+    {
+      id: "optoma",
+      label: "Optoma — HD / UHD / GT / HZ series",
+      manufacturer: "Optoma",
+      note: "Optoma remotes have discrete On and Off keys rather than one toggle — learn power_on and power_off separately, and leave 'power' blank.",
+      groups: [
+        ["Power", ["power_on", "power_off"]],
+        ["Sources", ["source_hdmi1", "source_hdmi2", "source_hdmi3", "source_vga", "source_video", "source"]],
+        ["Picture", ["blank", "freeze", "aspect", "image_mode", "eco_mode", "resync"]],
+        ["Geometry", ["keystone_up", "keystone_down", "zoom_in", "zoom_out"]],
+        ["Navigation", ["menu", "ok", "up", "down", "left", "right", "back", "info"]],
+        ["Volume", ["volume_up", "volume_down", "mute"]],
+      ],
+    },
+    {
+      id: "epson",
+      label: "Epson — EH-TW / EB / EF series",
+      manufacturer: "Epson",
+      note: "Epson labels the blanking key 'A/V Mute' (learn it as blank), zoom is 'E-Zoom' and the picture preset key is 'Color Mode' (learn as image_mode). Power is a single toggle on most models — press twice to confirm off.",
+      groups: [
+        ["Power", ["power", "power_on", "power_off"]],
+        ["Sources", ["source_hdmi1", "source_hdmi2", "source_vga", "source_video", "source"]],
+        ["Picture", ["blank", "freeze", "aspect", "image_mode", "eco_mode"]],
+        ["Geometry", ["keystone_up", "keystone_down", "zoom_in", "zoom_out"]],
+        ["Navigation", ["menu", "ok", "up", "down", "left", "right", "back", "info", "help"]],
+        ["Volume", ["volume_up", "volume_down", "mute"]],
+      ],
+    },
+    {
+      id: "benq",
+      label: "BenQ — MS / MW / TK / W series",
+      manufacturer: "BenQ",
+      note: "BenQ blanking is 'Eco Blank'. Most models use discrete On/Off.",
+      groups: [
+        ["Power", ["power_on", "power_off", "power"]],
+        ["Sources", ["source_hdmi1", "source_hdmi2", "source_vga", "source_video", "source"]],
+        ["Picture", ["blank", "freeze", "aspect", "image_mode", "eco_mode", "resync"]],
+        ["Geometry", ["keystone_up", "keystone_down", "zoom_in", "zoom_out"]],
+        ["Navigation", ["menu", "ok", "up", "down", "left", "right", "back", "info"]],
+        ["Volume", ["volume_up", "volume_down", "mute"]],
+      ],
+    },
+    {
+      id: "viewsonic",
+      label: "ViewSonic — PA / PX / LS series",
+      manufacturer: "ViewSonic",
+    },
+    {
+      id: "nec",
+      label: "NEC — M / P / PA series",
+      manufacturer: "NEC",
+      note: "NEC uses 'Picture Mute' for blanking and 'AUTO ADJ.' for resync.",
+    },
+    {
+      id: "acer",
+      label: "Acer — X / H / P series",
+      manufacturer: "Acer",
+    },
+  ],
+
+  receiver: [
+    { id: "generic", label: "Generic AV receiver / amplifier" },
+    {
+      id: "yamaha",
+      label: "Yamaha — RX-V / RX-A / TSR series",
+      manufacturer: "Yamaha",
+      note: "Yamaha scene keys (SCENE 1-4) are worth learning as preset_1..preset_4 — one press powers on and selects an input.",
+      groups: [
+        ["Power", ["power", "power_on", "power_off"]],
+        ["Volume", ["volume_up", "volume_down", "mute"]],
+        ["Scenes", ["preset_1", "preset_2", "preset_3", "preset_4"]],
+        ["Sources", ["source_hdmi1", "source_hdmi2", "source_hdmi3", "source_hdmi4", "source_tv", "source_bd", "source_tuner", "source_bluetooth", "source_aux"]],
+        ["Sound", ["sound_mode", "surround", "stereo", "direct", "night_mode"]],
+        ["Navigation", ["menu", "ok", "up", "down", "left", "right", "back", "info"]],
+      ],
+    },
+    {
+      id: "denon",
+      label: "Denon — AVR-S / AVR-X series",
+      manufacturer: "Denon",
+      note: "Denon and Marantz share a remote protocol family — if one preset doesn't capture cleanly, try the other.",
+    },
+    { id: "marantz", label: "Marantz — SR / NR series", manufacturer: "Marantz" },
+    { id: "onkyo", label: "Onkyo — TX-NR / TX-SR series", manufacturer: "Onkyo" },
+    { id: "pioneer", label: "Pioneer — VSX series", manufacturer: "Pioneer" },
+    { id: "sony", label: "Sony — STR-DH / STR-DN series", manufacturer: "Sony" },
+  ],
+
+  soundbar: [
+    { id: "generic", label: "Generic soundbar" },
+    {
+      id: "samsung",
+      label: "Samsung — HW series",
+      manufacturer: "Samsung",
+      note: "Samsung soundbars cycle inputs on one 'Source' key rather than offering discrete input buttons. Learn 'source' and drive it with repeats.",
+      groups: [
+        ["Power", ["power"]],
+        ["Volume", ["volume_up", "volume_down", "mute"]],
+        ["Sources", ["source"]],
+        ["Sound", ["sound_mode", "surround_on", "surround_off", "night_mode"]],
+        ["Tone", ["bass_up", "bass_down", "treble_up", "treble_down"]],
+        ["Playback", ["play", "pause", "next", "previous"]],
+      ],
+    },
+    { id: "lg", label: "LG — SN / SP / S series", manufacturer: "LG" },
+    { id: "jbl", label: "JBL — Bar series", manufacturer: "JBL" },
+    { id: "polk", label: "Polk — Signa / MagniFi series", manufacturer: "Polk Audio" },
+    { id: "bose", label: "Bose — Smart Soundbar series", manufacturer: "Bose" },
+  ],
+
+  decoder: [
+    { id: "generic", label: "Generic decoder / set-top box" },
+    {
+      id: "dstv_explora",
+      label: "DStv Explora / Explora Ultra",
+      manufacturer: "MultiChoice",
+      note: "The Explora remote is RF by default on newer units — pair it to IR mode first (Menu → Settings → Remote) or the blaster will have nothing to learn.",
+      groups: [
+        ["Power", ["power"]],
+        ["Channels", ["channel_up", "channel_down", "last_channel"]],
+        ["Keypad", ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_0"]],
+        ["Navigation", ["home", "guide", "menu", "ok", "up", "down", "left", "right", "back", "exit", "info"]],
+        ["PVR", ["record", "play", "pause", "stop", "rewind", "forward"]],
+        ["Colour keys", ["red", "green", "yellow", "blue"]],
+        ["Volume", ["volume_up", "volume_down", "mute"]],
+      ],
+    },
+    {
+      id: "dstv_hd",
+      label: "DStv HD Decoder (single view)",
+      manufacturer: "MultiChoice",
+      note: "No PVR transport keys on the single-view HD decoder — skip the PVR group.",
+      groups: [
+        ["Power", ["power"]],
+        ["Channels", ["channel_up", "channel_down", "last_channel"]],
+        ["Keypad", ["num_1", "num_2", "num_3", "num_4", "num_5", "num_6", "num_7", "num_8", "num_9", "num_0"]],
+        ["Navigation", ["guide", "menu", "ok", "up", "down", "left", "right", "back", "exit", "info"]],
+        ["Colour keys", ["red", "green", "yellow", "blue"]],
+        ["Volume", ["volume_up", "volume_down", "mute"]],
+      ],
+    },
+    { id: "openview", label: "OpenView HD decoder", manufacturer: "OpenView" },
+    { id: "starsat", label: "StarSat / OpenBox FTA receiver", manufacturer: "StarSat" },
+    { id: "generic_fibre", label: "Fibre / IPTV set-top box", note: "Most IPTV boxes are IR — learn power, dpad, home and the transport keys." },
+  ],
+
+  tv: [
+    { id: "generic", label: "Generic TV" },
+    {
+      id: "samsung",
+      label: "Samsung — Tizen (AU / TU / QN series)",
+      manufacturer: "Samsung",
+      note: "Samsung uses a single power toggle and one 'Source' key that opens a picker — discrete HDMI keys usually don't exist on the remote.",
+      groups: [
+        ["Power", ["power"]],
+        ["Volume", ["volume_up", "volume_down", "mute"]],
+        ["Channels", ["channel_up", "channel_down"]],
+        ["Navigation", ["home", "back", "menu", "ok", "up", "down", "left", "right"]],
+        ["Sources & apps", ["source", "netflix", "youtube", "prime_video"]],
+      ],
+    },
+    {
+      id: "lg",
+      label: "LG — webOS (UP / NANO / OLED series)",
+      manufacturer: "LG",
+      note: "Magic Remote models send Bluetooth for pointer and some keys — the IR fallback still covers power, volume, channel and the app keys.",
+    },
+    { id: "hisense", label: "Hisense — VIDAA series", manufacturer: "Hisense" },
+    { id: "tcl", label: "TCL — Android / Google TV", manufacturer: "TCL" },
+    { id: "sony", label: "Sony — Bravia", manufacturer: "Sony" },
+    { id: "skyworth", label: "Skyworth / Sinotec / Telefunken", note: "Common SA budget-brand chassis — mostly shared IR protocols." },
+  ],
+};
+
+const PRESET_EXTRA_HINTS = {
+  resync: "Re-sync / auto adjust",
+  help: "Help",
+  prime_video: "Prime Video",
+  preset_3: "Preset position 3", preset_4: "Preset position 4",
+};
+Object.assign(COMMAND_HINTS, PRESET_EXTRA_HINTS);
+
+function presetsFor(type) { return PRESETS[type] || null; }
+function findPreset(type, id) {
+  return (presetsFor(type) || []).find(pr => pr.id === id) || null;
+}
 
 function humanize(key) {
   return String(key || "").replace(/[_-]+/g, " ").trim().replace(/\b\w/g, c => c.toUpperCase());
@@ -152,6 +435,179 @@ const REMOTE_LAYOUTS = {
     { type: "row", btns: [
       { cmd: "netflix", icon: "N", label: "Netflix", cls:"app" },
       { cmd: "youtube", icon: "▶", label: "YouTube", cls:"app" },
+    ]},
+  ],
+  projector: [
+    { type: "row", btns: [
+      { cmd: "power_on", icon: "⏻", label: "On", cls: "power" },
+      { cmd: "power_off", icon: "⏹", label: "Off", cls: "power" },
+      { cmd: "power", icon: "◉", label: "Toggle", cls: "power" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "source_hdmi1", icon: "⬡", label: "HDMI 1" },
+      { cmd: "source_hdmi2", icon: "⬡", label: "HDMI 2" },
+      { cmd: "source_vga", icon: "▤", label: "VGA" },
+      { cmd: "source", icon: "⇄", label: "Source" },
+    ]},
+    { type: "dpad" },
+    { type: "row", btns: [
+      { cmd: "menu", icon: "☰", label: "Menu" },
+      { cmd: "back", icon: "↩", label: "Back" },
+      { cmd: "info", icon: "ℹ", label: "Info" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "blank", icon: "⬛", label: "Blank" },
+      { cmd: "freeze", icon: "❄", label: "Freeze" },
+      { cmd: "aspect", icon: "⛶", label: "Aspect" },
+      { cmd: "image_mode", icon: "🎨", label: "Picture" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "keystone_up", icon: "◺", label: "Keystone +" },
+      { cmd: "keystone_down", icon: "◹", label: "Keystone −" },
+      { cmd: "eco_mode", icon: "🌱", label: "Eco" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "zoom_out", icon: "－", label: "Zoom −" },
+      { cmd: "zoom_in", icon: "＋", label: "Zoom +" },
+      { cmd: "focus_near", icon: "◐", label: "Focus −" },
+      { cmd: "focus_far", icon: "◑", label: "Focus +" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "volume_down", icon: "－", label: "Vol −" },
+      { cmd: "mute", icon: "🔇", label: "Mute" },
+      { cmd: "volume_up", icon: "＋", label: "Vol +" },
+    ]},
+  ],
+  receiver: [
+    { type: "row", btns: [
+      { cmd: "power", icon: "⏻", label: "Power", cls: "power" },
+      { cmd: "mute", icon: "🔇", label: "Mute" },
+      { cmd: "info", icon: "ℹ", label: "Info" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "volume_down", icon: "－", label: "Vol −" },
+      { cmd: "volume_up", icon: "＋", label: "Vol +" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "source_hdmi1", icon: "1", label: "HDMI 1" },
+      { cmd: "source_hdmi2", icon: "2", label: "HDMI 2" },
+      { cmd: "source_hdmi3", icon: "3", label: "HDMI 3" },
+      { cmd: "source_hdmi4", icon: "4", label: "HDMI 4" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "source_tv", icon: "📺", label: "TV" },
+      { cmd: "source_bd", icon: "💿", label: "BD" },
+      { cmd: "source_tuner", icon: "📻", label: "Tuner" },
+      { cmd: "source_bluetooth", icon: "ᛒ", label: "BT" },
+    ]},
+    { type: "dpad" },
+    { type: "row", btns: [
+      { cmd: "menu", icon: "☰", label: "Menu" },
+      { cmd: "back", icon: "↩", label: "Back" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "sound_mode", icon: "🎚", label: "Mode" },
+      { cmd: "surround", icon: "◎", label: "Surround" },
+      { cmd: "stereo", icon: "◫", label: "Stereo" },
+      { cmd: "night_mode", icon: "🌙", label: "Night" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "bass_down", icon: "－", label: "Bass −" },
+      { cmd: "bass_up", icon: "＋", label: "Bass +" },
+      { cmd: "treble_down", icon: "－", label: "Treble −" },
+      { cmd: "treble_up", icon: "＋", label: "Treble +" },
+    ]},
+  ],
+  soundbar: [
+    { type: "row", btns: [
+      { cmd: "power", icon: "⏻", label: "Power", cls: "power" },
+      { cmd: "mute", icon: "🔇", label: "Mute" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "volume_down", icon: "－", label: "Vol −" },
+      { cmd: "volume_up", icon: "＋", label: "Vol +" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "source_tv", icon: "📺", label: "TV" },
+      { cmd: "source_hdmi", icon: "⬡", label: "HDMI" },
+      { cmd: "source_optical", icon: "◇", label: "Optical" },
+      { cmd: "source_bluetooth", icon: "ᛒ", label: "BT" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "sound_mode", icon: "🎚", label: "Mode" },
+      { cmd: "surround_on", icon: "◎", label: "Surr On" },
+      { cmd: "surround_off", icon: "○", label: "Surr Off" },
+      { cmd: "night_mode", icon: "🌙", label: "Night" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "bass_down", icon: "－", label: "Bass −" },
+      { cmd: "bass_up", icon: "＋", label: "Bass +" },
+      { cmd: "treble_down", icon: "－", label: "Treble −" },
+      { cmd: "treble_up", icon: "＋", label: "Treble +" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "previous", icon: "⏮", label: "Prev" },
+      { cmd: "play", icon: "▶", label: "Play" },
+      { cmd: "pause", icon: "⏸", label: "Pause" },
+      { cmd: "next", icon: "⏭", label: "Next" },
+    ]},
+  ],
+  decoder: [
+    { type: "row", btns: [
+      { cmd: "power", icon: "⏻", label: "Power", cls: "power" },
+      { cmd: "mute", icon: "🔇", label: "Mute" },
+      { cmd: "info", icon: "ℹ", label: "Info" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "num_1", icon: "1", label: "1" },
+      { cmd: "num_2", icon: "2", label: "2" },
+      { cmd: "num_3", icon: "3", label: "3" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "num_4", icon: "4", label: "4" },
+      { cmd: "num_5", icon: "5", label: "5" },
+      { cmd: "num_6", icon: "6", label: "6" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "num_7", icon: "7", label: "7" },
+      { cmd: "num_8", icon: "8", label: "8" },
+      { cmd: "num_9", icon: "9", label: "9" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "last_channel", icon: "↺", label: "Last" },
+      { cmd: "num_0", icon: "0", label: "0" },
+      { cmd: "exit", icon: "✕", label: "Exit" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "channel_up", icon: "▲", label: "CH +" },
+      { cmd: "volume_up", icon: "＋", label: "Vol +" },
+    ]},
+    { type: "dpad" },
+    { type: "row", btns: [
+      { cmd: "channel_down", icon: "▼", label: "CH −" },
+      { cmd: "volume_down", icon: "－", label: "Vol −" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "home", icon: "⌂", label: "Home" },
+      { cmd: "guide", icon: "📋", label: "Guide" },
+      { cmd: "menu", icon: "☰", label: "Menu" },
+      { cmd: "back", icon: "↩", label: "Back" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "rewind", icon: "⏪", label: "Rew" },
+      { cmd: "play", icon: "▶", label: "Play" },
+      { cmd: "pause", icon: "⏸", label: "Pause" },
+      { cmd: "forward", icon: "⏩", label: "Fwd" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "record", icon: "⏺", label: "Rec" },
+      { cmd: "stop", icon: "⏹", label: "Stop" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "red", icon: "🔴", label: "Red" },
+      { cmd: "green", icon: "🟢", label: "Green" },
+      { cmd: "yellow", icon: "🟡", label: "Yellow" },
+      { cmd: "blue", icon: "🔵", label: "Blue" },
     ]},
   ],
   climate: [
@@ -242,8 +698,12 @@ class ARSmartIRPanel extends HTMLElement {
     this._hass = hass;
     if (!this._rendered) {
       this._rendered = true;
+      this._loadMotionPref();
       this._render();
       this._attachEvents();
+      this._applyMotionPref();
+      this._typeHint();
+      this._renderPresetSelect("generic");
       this._load();
     }
   }
@@ -559,25 +1019,86 @@ class ARSmartIRPanel extends HTMLElement {
      opacity-only substitutes here rather than being switched off, so the
      feedback still lands and nothing travels across the screen.
      ir-pulse, ir-flash and ir-spin involve no movement (opacity, box-shadow,
-     and a spinner that must spin to mean anything) and are left alone. */
+     and a spinner that must spin to mean anything) and are left alone.
+
+     ⚠ Gated on [data-motion="reduced"], NOT on @media (prefers-reduced-motion),
+     because the media query is not overridable from inside the page and Android
+     turns it on for the whole WebView whenever battery saver or "Remove
+     animations" is active — which silently flattened the entire pack with no
+     way for the user to say "no, I want them". _applyMotionPref() reads the
+     media query, applies the user's Auto/Full/Reduced choice on top, and sets
+     the attribute. Auto still honours the OS. */
   @keyframes ir-fade-in { from { opacity: 0; } to { opacity: 1; } }
   @keyframes ir-ring-fade { 0%, 100% { opacity: 0; } 50% { opacity: .5; } }
 
-  @media (prefers-reduced-motion: reduce) {
-    /* slide / rise / shake → plain fade */
-    .ir-panel.active, .ir-anim-in, .ir-anim-shake, .ir-rise {
-      animation: ir-fade-in .2s ease-out both !important;
-    }
-    .ir-rise { animation-delay: calc(var(--i, 0) * 25ms) !important; }
-    /* scale pop → fade */
-    .ir-pill.just-learned { animation: ir-fade-in .3s ease-out both !important; }
-    /* expanding rings → one static ring that breathes */
-    #ir-learn-btn.learning::before { animation: ir-ring-fade 1.6s ease-in-out infinite !important; }
-    #ir-learn-btn.learning::after { animation: none !important; }
-    /* a sweep has no still equivalent — the bar width already tells the story */
-    .ir-cov-fill.filling::after { animation: none !important; }
-    .ir-cov-fill { transition: none !important; }
+  .ir-wrap[data-motion="reduced"] .ir-panel.active,
+  .ir-wrap[data-motion="reduced"] .ir-anim-in,
+  .ir-wrap[data-motion="reduced"] .ir-anim-shake,
+  .ir-wrap[data-motion="reduced"] .ir-rise {
+    animation: ir-fade-in .2s ease-out both !important;
   }
+  .ir-wrap[data-motion="reduced"] .ir-rise { animation-delay: calc(var(--i, 0) * 25ms) !important; }
+  .ir-wrap[data-motion="reduced"] .ir-pill.just-learned { animation: ir-fade-in .3s ease-out both !important; }
+  .ir-wrap[data-motion="reduced"] #ir-learn-btn.learning::before { animation: ir-ring-fade 1.6s ease-in-out infinite !important; }
+  .ir-wrap[data-motion="reduced"] #ir-learn-btn.learning::after { animation: none !important; }
+  .ir-wrap[data-motion="reduced"] .ir-cov-fill.filling::after { animation: none !important; }
+  .ir-wrap[data-motion="reduced"] .ir-cov-fill { transition: none !important; }
+
+  /* Remote preview (step 2) */
+  .ir-preview-card {
+    margin-top: 18px; border-radius: 14px;
+    border: 1px solid rgba(127,127,127,.2);
+    background: rgba(127,127,127,.05);
+    overflow: hidden;
+  }
+  .ir-preview-head {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-bottom: 1px solid rgba(127,127,127,.16);
+  }
+  .ir-preview-head > div:first-child { flex: 1; min-width: 0; }
+  .ir-preview-title { font-size: 13px; font-weight: 700; }
+  .ir-preview-sub { font-size: 11px; color: var(--secondary-text-color); margin-top: 2px; }
+  .ir-preview-body {
+    display: grid; grid-template-columns: minmax(0, 240px) 1fr;
+    gap: 18px; padding: 16px 14px;
+  }
+  .ir-preview-card.collapsed .ir-preview-body { display: none; }
+  .ir-preview-shell { margin: 0; }
+  .ir-preview-shell .ir-rbtn { cursor: default; }
+  .ir-preview-shell .ir-rbtn:hover { background: rgba(127,127,127,.09); border-color: rgba(127,127,127,.22); }
+  .ir-preview-shell .ir-rbtn:active { transform: none; }
+  .ir-preview-shell .ir-rbtn.todo { opacity: .55; border-style: dashed; }
+  .ir-preview-shell .ir-rbtn.done { background: rgba(26,153,107,.13); border-color: rgba(26,153,107,.4); }
+  .ir-preview-side { font-size: 12px; color: var(--secondary-text-color); }
+  .ir-preview-count { font-size: 13px; font-weight: 700; color: var(--primary-text-color); margin-bottom: 8px; }
+  .ir-preview-legend { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+  .ir-preview-legend span { display: flex; align-items: center; gap: 7px; }
+  .ir-legend-dot {
+    width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
+    border: 1px solid rgba(127,127,127,.4); background: transparent;
+  }
+  .ir-legend-dot.done { background: rgba(26,153,107,.5); border-color: rgba(26,153,107,.6); }
+  .ir-legend-dot.todo { border-style: dashed; }
+  .ir-preview-note { line-height: 1.5; }
+  @media (max-width: 700px) {
+    .ir-preview-body { grid-template-columns: 1fr; }
+  }
+
+  /* Motion control (see the Animation pack above) */
+  .ir-motion-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid rgba(127,127,127,.16);
+    font-size: 11px; color: var(--secondary-text-color);
+  }
+  .ir-motion-bar label { font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+  .ir-motion-bar select {
+    padding: 4px 8px; border-radius: 7px; font-size: 11px;
+    border: 1px solid rgba(127,127,127,.3);
+    background: var(--secondary-background-color, rgba(0,0,0,.04));
+    color: var(--primary-text-color);
+  }
+  .ir-motion-state { font-family: monospace; }
 
   /* Delete confirm */
   .ir-delete-confirm {
@@ -746,16 +1267,29 @@ class ARSmartIRPanel extends HTMLElement {
   }
 </style>
 
-<div class="ir-wrap">
+<div class="ir-wrap" id="ir-wrap">
 
   <!-- Header -->
   <div class="ir-header">
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.9.1</div>
+      <div class="ir-version">v1.10.0</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
+  </div>
+
+  <!-- Motion control. Lives up top on purpose: when the animations look dead,
+       this is the first thing to check, and it's the thing that fixes it. -->
+  <div class="ir-motion-bar">
+    <label for="ir-motion">Motion</label>
+    <select id="ir-motion" title="Override the OS reduced-motion setting for this panel">
+      <option value="auto">Auto — follow this device</option>
+      <option value="full">Always animate</option>
+      <option value="reduced">Minimal</option>
+    </select>
+    <span class="ir-motion-state" id="ir-motion-state">—</span>
+    <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-motion-test" type="button">Test</button>
   </div>
 
   <!-- Setup guard -->
@@ -837,12 +1371,29 @@ class ARSmartIRPanel extends HTMLElement {
           <div class="ir-field">
             <label>Type</label>
             <select id="ir-type">
-              <option value="climate">Climate / air conditioner</option>
-              <option value="fan">Fan</option>
-              <option value="media_player">Media player</option>
-              <option value="tv">TV</option>
-              <option value="custom">Custom / other (blinds, screens, gates…)</option>
+              <optgroup label="Climate">
+                <option value="climate">Climate / air conditioner</option>
+                <option value="fan">Fan</option>
+              </optgroup>
+              <optgroup label="Audio / video">
+                <option value="tv">TV</option>
+                <option value="projector">Projector</option>
+                <option value="receiver">AV receiver / amplifier</option>
+                <option value="soundbar">Soundbar</option>
+                <option value="decoder">Decoder / set-top box</option>
+                <option value="media_player">Media player (generic)</option>
+              </optgroup>
+              <optgroup label="Other">
+                <option value="custom">Custom / other (blinds, screens, gates…)</option>
+              </optgroup>
             </select>
+            <div class="ir-hint" id="ir-type-hint"></div>
+          </div>
+          <div class="ir-field" id="ir-preset-field">
+            <label>Remote preset <span style="font-weight:400;text-transform:none;letter-spacing:0">(optional)</span></label>
+            <select id="ir-preset"></select>
+            <div class="ir-hint">Presets only shape the button list and the preview below — they contain no IR codes. You still learn every code off your own remote.</div>
+            <div class="ir-callout warning" id="ir-preset-note" style="display:none"></div>
           </div>
           <div class="ir-field" id="ir-climate-style-field">
             <label>AC remote style</label>
@@ -869,6 +1420,34 @@ class ARSmartIRPanel extends HTMLElement {
             <div class="ir-hint">Comma-separated. Leave blank for single model.</div>
           </div>
         </details>
+
+        <!-- Remote preview -->
+        <div class="ir-preview-card" id="ir-preview-card">
+          <div class="ir-preview-head">
+            <div>
+              <div class="ir-preview-title">Remote preview</div>
+              <div class="ir-preview-sub" id="ir-preview-sub">—</div>
+            </div>
+            <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-preview-toggle" type="button">Hide</button>
+          </div>
+          <div class="ir-preview-body" id="ir-preview-body">
+            <div class="ir-remote-shell ir-preview-shell">
+              <div class="ir-remote-body" id="ir-preview-remote"></div>
+            </div>
+            <div class="ir-preview-side">
+              <div class="ir-preview-count" id="ir-preview-count">—</div>
+              <div class="ir-preview-legend">
+                <span><i class="ir-legend-dot done"></i> already learned</span>
+                <span><i class="ir-legend-dot todo"></i> still to learn</span>
+              </div>
+              <p class="ir-preview-note">
+                This is the button set you'll be asked for in step 3 — it's a
+                template of what this kind of remote normally has, not a
+                guarantee. Buttons your remote doesn't have can just be skipped.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="ir-actions">
         <button class="ir-btn ir-btn-primary" id="ir-save-details">Save &amp; continue →</button>
@@ -1083,9 +1662,28 @@ class ARSmartIRPanel extends HTMLElement {
     this.qs("#ir-back-to-1").onclick = () => this._setStep(1);
     this.qs("#ir-type").addEventListener("change", () => {
       this._toggleClimateStyleField();
+      this._renderPresetSelect("generic");
       this._refreshDerivedUI();
     });
+    this.qs("#ir-preset").addEventListener("change", () => {
+      this._renderPresetNote();
+      this._applyPresetManufacturer();
+      this._refreshDerivedUI();
+    });
+    this.qs("#ir-preview-toggle").onclick = () => {
+      const card = this.qs("#ir-preview-card");
+      const collapsed = card.classList.toggle("collapsed");
+      this.qs("#ir-preview-toggle").textContent = collapsed ? "Show" : "Hide";
+    };
     this.qs("#ir-climate-style").addEventListener("change", () => this._refreshDerivedUI());
+
+    // Motion
+    this.qs("#ir-motion").addEventListener("change", (e) => this._setMotionPref(e.target.value));
+    this.qs("#ir-motion-test").onclick = () => this._testMotion();
+    // Auto mode must react if the OS setting flips mid-session (battery saver
+    // kicking in is exactly when this happens).
+    window.matchMedia("(prefers-reduced-motion: reduce)")
+      .addEventListener("change", () => this._applyMotionPref());
 
     // Step 3
     this.qs("#ir-learn-btn").onclick = () => this._learnCommand();
@@ -1132,6 +1730,7 @@ class ARSmartIRPanel extends HTMLElement {
       panel.classList.toggle("active", Number(panel.dataset.panel) === this._step);
     });
     this._hideCallout();
+    if (this._step === 2) this._renderPreviewRemote();
     if (this._step === 3) { this._renderPills(); this._renderRepeatEditor(); }
     if (this._step === 4) this._renderTestRemote();
     if (this._step === 5) { this._renderChecklist(); this._renderRaw(); }
@@ -1245,10 +1844,13 @@ class ARSmartIRPanel extends HTMLElement {
     this.qs("#ir-type").value = "climate";
     this.qs("#ir-climate-style").value = "absolute";
     this._toggleClimateStyleField();
+    this._renderPresetSelect("generic");
+    this._typeHint();
     this.qs("#ir-manufacturer").value = "";
     this.qs("#ir-model").value = "";
     this.qs("#ir-supported-models").value = "";
     this.qs("#ir-details-title").textContent = "New profile";
+    this._renderPreviewRemote();
   }
 
   _loadProfile(key) {
@@ -1260,6 +1862,8 @@ class ARSmartIRPanel extends HTMLElement {
     this.qs("#ir-type").value = d.device_type || "climate";
     this.qs("#ir-climate-style").value = d.climate_style === "relative" ? "relative" : "absolute";
     this._toggleClimateStyleField();
+    this._renderPresetSelect(d.preset || "generic");
+    this._typeHint();
     this.qs("#ir-manufacturer").value = d.manufacturer || "";
     this.qs("#ir-model").value = d.model || "";
     this.qs("#ir-supported-models").value = (d.supported_models || []).join(", ");
@@ -1268,6 +1872,7 @@ class ARSmartIRPanel extends HTMLElement {
       const sel = this.qs("#ir-entry");
       if ([...sel.options].some(o => o.value === d.entry_id)) sel.value = d.entry_id;
     }
+    this._renderPreviewRemote();
   }
 
   _profilePayload() {
@@ -1281,6 +1886,7 @@ class ARSmartIRPanel extends HTMLElement {
       entry_id: this.qs("#ir-entry").value,
       name, manufacturer: this.qs("#ir-manufacturer").value.trim(),
       model, device_type: this.qs("#ir-type").value || "climate",
+      preset: this._currentPresetId(),
       climate_style: this.qs("#ir-climate-style")?.value === "relative" ? "relative" : "absolute",
       supported_models: rawModels.length ? rawModels : [model],
       commands: existing.commands || {},
@@ -1709,7 +2315,8 @@ class ARSmartIRPanel extends HTMLElement {
     const rawType = device?.device_type || this.qs("#ir-type")?.value || "climate";
     const type = this._effectiveType(rawType, device?.climate_style);
     const commands = device?.commands || {};
-    const layout = REMOTE_LAYOUTS[type] || REMOTE_LAYOUTS[rawType] || REMOTE_LAYOUTS.tv;
+    const presetId = device?.preset || this._currentPresetId();
+    const layout = this._layoutFor(type, presetId) || this._layoutFor(rawType, presetId) || REMOTE_LAYOUTS.tv;
     const name = device?.name || humanize(this._currentKey) || "Remote";
 
     const nameEl = this.qs("#ir-remote-name");
@@ -1860,6 +2467,8 @@ class ARSmartIRPanel extends HTMLElement {
 
   _refreshDerivedUI() {
     this._setLearnMode(this._learnMode || "ir");
+    this._typeHint();
+    if (this._step === 2) this._renderPreviewRemote();
     if (this._step === 3) { this._renderPills(); this._renderRepeatEditor(); }
     if (this._step === 4) this._renderTestRemote();
     if (this._step === 5) { this._renderChecklist(); this._renderRaw(); }
@@ -1869,6 +2478,221 @@ class ARSmartIRPanel extends HTMLElement {
     return Object.keys(this._data.store?.devices?.[this._currentKey]?.commands || {});
   }
 
+  // ── Motion ────────────────────────────────────────────────────────────────
+
+  /**
+   * Resolve the motion preference and stamp it on the wrap as [data-motion].
+   *
+   * This exists because `@media (prefers-reduced-motion: reduce)` is a
+   * one-way door: the page can read it but can't opt out of it. Android turns
+   * it on for the entire WebView whenever battery saver or Settings →
+   * Accessibility → "Remove animations" is active, and the HA companion app
+   * inherits that. The result was the whole animation pack quietly collapsing
+   * into 200ms fades on every HA instance the user opened — which reads as
+   * "the animations don't work" rather than "your phone asked for less
+   * motion", and there was no way to argue with it. Now Auto still honours
+   * the OS, but Full overrides it.
+   */
+  _applyMotionPref() {
+    const wrap = this.qs("#ir-wrap");
+    if (!wrap) return;
+    const osReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const pref = this._motionPref || "auto";
+    const effective =
+      pref === "full" ? "full" :
+      pref === "reduced" ? "reduced" :
+      (osReduced ? "reduced" : "full");
+    wrap.dataset.motion = effective;
+
+    const state = this.qs("#ir-motion-state");
+    if (state) {
+      state.textContent =
+        `build ${PANEL_BUILD} · device asks for ${osReduced ? "reduced" : "full"} motion · using ${effective}`;
+    }
+    const sel = this.qs("#ir-motion");
+    if (sel && sel.value !== pref) sel.value = pref;
+  }
+
+  _setMotionPref(pref) {
+    this._motionPref = ["auto", "full", "reduced"].includes(pref) ? pref : "auto";
+    try { localStorage.setItem(MOTION_PREF_KEY, this._motionPref); } catch (e) { /* private mode */ }
+    this._applyMotionPref();
+  }
+
+  _loadMotionPref() {
+    let stored = "auto";
+    try { stored = localStorage.getItem(MOTION_PREF_KEY) || "auto"; } catch (e) { /* private mode */ }
+    this._motionPref = ["auto", "full", "reduced"].includes(stored) ? stored : "auto";
+  }
+
+  /** Fire every animation in the pack at once, so "is it broken?" is a one-tap question. */
+  _testMotion() {
+    const panel = this.qs(".ir-panel.active");
+    if (panel) this._anim(panel, "active");
+    this._showCallout("Motion test — panel slide, callout drop-in, list rise and the coverage sweep should all be visible.", "info");
+    const fill = this.qs("#ir-cov-fill");
+    if (fill) { this._anim(fill, "filling"); setTimeout(() => fill.classList.remove("filling"), 900); }
+    this.querySelectorAll(".ir-rise").forEach(el => this._anim(el, "ir-rise"));
+    this.querySelectorAll(".ir-pill").forEach((el, i) => {
+      if (i < 6) setTimeout(() => this._anim(el, "just-learned"), i * 60);
+    });
+    const learn = this.qs("#ir-learn-btn");
+    if (learn) {
+      learn.classList.add("learning");
+      setTimeout(() => learn.classList.remove("learning"), 3000);
+    }
+  }
+
+  // ── Presets ───────────────────────────────────────────────────────────────
+
+  _currentPresetId() { return this.qs("#ir-preset")?.value || "generic"; }
+
+  _currentPreset() {
+    const type = this.qs("#ir-type")?.value || "climate";
+    return findPreset(type, this._currentPresetId());
+  }
+
+  /** Rebuild the preset dropdown for the selected type. Hides itself when the type has none. */
+  _renderPresetSelect(selectedId) {
+    const type = this.qs("#ir-type")?.value || "climate";
+    const field = this.qs("#ir-preset-field");
+    const sel = this.qs("#ir-preset");
+    if (!field || !sel) return;
+    const list = presetsFor(type);
+    if (!list) { field.style.display = "none"; sel.innerHTML = ""; return; }
+    field.style.display = "";
+    sel.innerHTML = "";
+    list.forEach(pr => {
+      const o = document.createElement("option");
+      o.value = pr.id;
+      o.textContent = pr.label;
+      sel.appendChild(o);
+    });
+    sel.value = list.some(pr => pr.id === selectedId) ? selectedId : "generic";
+    this._renderPresetNote();
+  }
+
+  _renderPresetNote() {
+    const el = this.qs("#ir-preset-note");
+    if (!el) return;
+    const preset = this._currentPreset();
+    if (!preset || !preset.note) { el.style.display = "none"; el.textContent = ""; return; }
+    el.textContent = preset.note;
+    el.style.display = "block";
+    this._anim(el, "ir-anim-in");
+  }
+
+  /** Auto-fill Manufacturer from the preset, but never clobber something typed. */
+  _applyPresetManufacturer() {
+    const preset = this._currentPreset();
+    const field = this.qs("#ir-manufacturer");
+    if (!preset || !field || !preset.manufacturer) return;
+    const current = field.value.trim();
+    const known = (presetsFor(this.qs("#ir-type")?.value) || []).map(pr => pr.manufacturer).filter(Boolean);
+    if (!current || known.includes(current)) field.value = preset.manufacturer;
+  }
+
+  _typeHint() {
+    const type = this.qs("#ir-type")?.value || "climate";
+    const el = this.qs("#ir-type-hint");
+    if (!el) return;
+    const hints = {
+      projector: "Creates a media_player entity. Exports to codes/media_player.",
+      receiver: "Creates a media_player entity. Exports to codes/media_player.",
+      soundbar: "Creates a media_player entity. Exports to codes/media_player.",
+      decoder: "Creates a media_player entity. Exports to codes/media_player.",
+      tv: "Creates a media_player entity. Exports to codes/media_player.",
+      media_player: "Creates a media_player entity. Exports to codes/media_player.",
+      climate: "Creates a climate entity. Exports to codes/climate.",
+      fan: "Creates a fan entity. Exports to codes/fan.",
+      custom: "Creates no entity and can't be exported as a codeset — use \"Export HA scripts\" and wrap them yourself.",
+    };
+    el.textContent = hints[type] || "";
+  }
+
+  // ── Remote preview ────────────────────────────────────────────────────────
+
+  /** Layout for a type, honouring a preset override. */
+  _layoutFor(type, presetId) {
+    const preset = presetId ? findPreset(type, presetId) : null;
+    if (preset && preset.layout) return preset.layout;
+    return REMOTE_LAYOUTS[type] || null;
+  }
+
+  /**
+   * Render the step-2 preview: what this remote is expected to look like, and
+   * which of those buttons are already captured. Non-interactive by design —
+   * nothing here can fire IR, because at this point the profile may not even
+   * be saved yet.
+   */
+  _renderPreviewRemote() {
+    const card = this.qs("#ir-preview-card");
+    const body = this.qs("#ir-preview-remote");
+    if (!card || !body) return;
+
+    const rawType = this.qs("#ir-type")?.value || "climate";
+    const type = this._effectiveType(rawType);
+    const presetId = this._currentPresetId();
+    const preset = this._currentPreset();
+    const layout = this._layoutFor(type, presetId) || this._layoutFor(rawType, presetId);
+    const learned = new Set(this._currentCommands());
+
+    const sub = this.qs("#ir-preview-sub");
+    if (sub) {
+      const bits = [TYPE_LABELS[rawType] || rawType];
+      if (preset && preset.id !== "generic") bits.push(preset.label);
+      sub.textContent = bits.join(" · ");
+    }
+
+    body.innerHTML = "";
+    if (!layout) {
+      body.innerHTML = `<p style="font-size:12px;color:var(--secondary-text-color);text-align:center">No preview layout for this type — the checklist in step 3 is still your guide.</p>`;
+    } else {
+      layout.forEach(section => {
+        if (section.type === "dpad") {
+          const dpad = document.createElement("div");
+          dpad.className = "ir-dpad";
+          [
+            { cmd: "up", icon: "▲", cls: "up" },
+            { cmd: "left", icon: "◀", cls: "left" },
+            { cmd: "ok", icon: "OK", cls: "ok" },
+            { cmd: "right", icon: "▶", cls: "right" },
+            { cmd: "down", icon: "▼", cls: "down" },
+          ].forEach(d => dpad.appendChild(this._makePreviewBtn(d, learned, d.cls)));
+          body.appendChild(dpad);
+        } else {
+          const row = document.createElement("div");
+          row.className = "ir-remote-row";
+          section.btns.forEach(b => row.appendChild(this._makePreviewBtn(b, learned)));
+          body.appendChild(row);
+        }
+      });
+    }
+
+    // Counts are against the *checklist*, not the layout — the layout is a
+    // subset chosen for legibility, the checklist is what you're asked for.
+    const rec = this._allRecommended();
+    const done = rec.filter(c => learned.has(c)).length;
+    const count = this.qs("#ir-preview-count");
+    if (count) {
+      count.textContent = this._currentKey
+        ? `${done} of ${rec.length} commands learned`
+        : `${rec.length} commands in this template`;
+    }
+  }
+
+  _makePreviewBtn(def, learnedSet, extraCls = "") {
+    const { cmd, icon, label, cls: defCls = "" } = def;
+    const has = learnedSet.has(cmd);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.disabled = true;
+    btn.className = `ir-rbtn ${defCls} ${extraCls} ${has ? "done" : "todo"}`.trim();
+    btn.title = `${cmd} — ${COMMAND_HINTS[cmd] || "custom command"}${has ? " (learned)" : ""}`;
+    btn.innerHTML = `<span>${icon}</span><span class="ir-rbtn-label">${label || cmd}</span>`;
+    return btn;
+  }
+
   _effectiveType(type, style) {
     const t = type ?? this.qs("#ir-type")?.value ?? "climate";
     const s = style ?? this.qs("#ir-climate-style")?.value ?? "absolute";
@@ -1876,8 +2700,13 @@ class ARSmartIRPanel extends HTMLElement {
   }
 
   _recommendedGroups() {
+    const rawType = this.qs("#ir-type")?.value || "climate";
+    const preset = this._currentPreset();
+    // A preset's groups win over the type default — that's the whole point of
+    // picking "Optoma" over "Generic projector".
+    if (preset && preset.groups) return preset.groups;
     const type = this._effectiveType();
-    return RECOMMENDED[type] || RECOMMENDED.climate;
+    return RECOMMENDED[type] || RECOMMENDED[rawType] || RECOMMENDED.climate;
   }
 
   _toggleClimateStyleField() {

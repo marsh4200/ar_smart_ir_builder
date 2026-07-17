@@ -19,6 +19,20 @@ DEVICE_TYPE_ALIASES = {
     "aircon": "climate",
     "air_conditioner": "climate",
     "television": "tv",
+    # Projector
+    "beamer": "projector",
+    "video_projector": "projector",
+    # AV receiver / amplifier
+    "avr": "receiver",
+    "amp": "receiver",
+    "amplifier": "receiver",
+    "av_receiver": "receiver",
+    # Soundbar
+    "sound_bar": "soundbar",
+    # Set-top box / decoder (DStv, OpenView, ...)
+    "stb": "decoder",
+    "set_top_box": "decoder",
+    "satellite": "decoder",
 }
 
 
