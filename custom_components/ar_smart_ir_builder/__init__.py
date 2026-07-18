@@ -88,6 +88,7 @@ SAVE_SCHEMA = vol.Schema(
         vol.Optional("manufacturer"): cv.string,
         vol.Optional("model"): cv.string,
         vol.Optional("device_type"): cv.string,
+        vol.Optional("preset"): cv.string,
         vol.Optional("supported_models"): [cv.string],
         vol.Optional("commands_encoding"): cv.string,
         vol.Optional("commands"): dict,
@@ -274,6 +275,14 @@ async def _async_migrate_legacy_store(hass: HomeAssistant, store: ARSmartIRStore
         async_dispatcher_send(hass, SIGNAL_DEVICES_UPDATED)
 
 
+# Types that are semantically a media_player once the presentation layer is
+# stripped off. Module constant so both fallbacks below stay in agreement.
+_MEDIA_LIKE_TYPES = {
+    "media_player", "tv", "television", "projector",
+    "receiver", "soundbar", "decoder",
+}
+
+
 def _resolve_device_type(
     requested: str | None,
     existing: dict[str, Any],
@@ -287,7 +296,7 @@ def _resolve_device_type(
     if existing_type in SUPPORTED_DEVICE_TYPES:
         return existing_type
 
-    if requested_type == "tv":
+    if requested_type in _MEDIA_LIKE_TYPES:
         return "media_player"
 
     if any(name.startswith("fan_") for name in commands):
@@ -298,7 +307,7 @@ def _resolve_device_type(
         "mute", "channel_up", "channel_down", "play", "pause", "stop",
         "home", "back", "menu", "source",
     }
-    if requested_type in {"media_player", "tv"}:
+    if requested_type in _MEDIA_LIKE_TYPES:
         return "media_player"
     if media_hints & set(commands):
         return "media_player"
@@ -329,7 +338,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=34",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=35",
                 }
             },
             require_admin=True,

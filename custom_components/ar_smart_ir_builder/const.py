@@ -18,7 +18,20 @@ CONF_ENTRY_ID = "entry_id"
 CONF_BROADLINK_DEVICE = "broadlink_device"
 DEFAULT_TITLE = "AR Smart IR Builder"
 SIGNAL_DEVICES_UPDATED = f"{DOMAIN}_devices_updated"
-SUPPORTED_DEVICE_TYPES: list[str] = ["climate", "fan", "media_player", "tv", "custom"]
+SUPPORTED_DEVICE_TYPES: list[str] = [
+    "climate",
+    "fan",
+    "media_player",
+    "tv",
+    "projector",
+    "receiver",
+    "soundbar",
+    "decoder",
+    "custom",
+]
+# projector / receiver / soundbar / decoder are presentation-level types. They
+# get their own recommended command sets and remote layouts in the panel, but
+# they all back onto the media_player platform and export to codes/media_player.
 # "custom" is a free-form profile (blinds, screens, gates, projectors, ...).
 # It creates no HA entity and cannot be exported as an ar_smart_ir codeset —
 # use "Export HA scripts" for these and wrap the scripts in e.g. a template cover.

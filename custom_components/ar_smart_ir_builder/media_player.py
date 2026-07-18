@@ -36,7 +36,15 @@ async def _async_remove_entity(hass: HomeAssistant, entity) -> None:
 from .const import DATA_STORE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_controller_available, send_with_policy
 from .storage import ARSmartIRStore, normalize_device
 
-MEDIA_PLAYER_DEVICE_TYPES = {"media_player", "tv", "television"}
+MEDIA_PLAYER_DEVICE_TYPES = {
+    "media_player",
+    "tv",
+    "television",
+    "projector",
+    "receiver",
+    "soundbar",
+    "decoder",
+}
 
 
 async def async_setup_entry(
