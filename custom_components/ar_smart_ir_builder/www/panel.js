@@ -5,7 +5,7 @@
 // the OS reduced-motion setting with no way to say otherwise).
 
 const MOTION_PREF_KEY = "ar_smart_ir_builder.motion";
-const PANEL_BUILD = "2.10.0";
+const PANEL_BUILD = "2.11.0";
 const AR_KEYFRAMES = `
 @keyframes ir-spin { to { transform: rotate(360deg); } }
 @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -1260,33 +1260,6 @@ ${AR_KEYFRAMES}
      _testMotion() removes .running after ~5s. */
   .ir-selftest.running::after { animation: ir-selftest 1.6s ease-in-out infinite; }
 
-  /* Diagnostics */
-  .ir-diag {
-    display: none; margin-top: 12px; border-radius: 12px;
-    border: 1px solid rgba(127,127,127,.25);
-    background: rgba(127,127,127,.06); overflow: hidden;
-  }
-  .ir-diag.show { display: block; }
-  .ir-diag-head {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 12px; border-bottom: 1px solid rgba(127,127,127,.18);
-    font-size: 13px;
-  }
-  .ir-diag-head strong { flex: 1; }
-  .ir-diag-verdict {
-    padding: 10px 12px; font-size: 13px; line-height: 1.5;
-    border-bottom: 1px solid rgba(127,127,127,.14);
-  }
-  .ir-diag-verdict.bad { background: rgba(220,50,50,.09); color: #c83030; }
-  .ir-diag-verdict.good { background: rgba(26,153,107,.1); }
-  .ir-diag pre {
-    margin: 0; padding: 12px; font-size: 11px; line-height: 1.6;
-    font-family: ui-monospace, Menlo, Consolas, monospace;
-    white-space: pre-wrap; word-break: break-word;
-    max-height: 340px; overflow: auto;
-    color: var(--primary-text-color);
-  }
-
   /* Delete confirm */
   .ir-delete-confirm {
     display: none; margin-top: 10px; padding: 12px 14px; border-radius: 11px;
@@ -1495,7 +1468,7 @@ ${AR_KEYFRAMES}
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.11.1</div>
+      <div class="ir-version">v1.11.2</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -1511,21 +1484,7 @@ ${AR_KEYFRAMES}
     </select>
     <span class="ir-motion-state" id="ir-motion-state">—</span>
     <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-motion-test" type="button">Test</button>
-    <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-motion-diag" type="button">Diagnose</button>
     <div class="ir-selftest" id="ir-selftest"></div>
-  </div>
-
-  <!-- Diagnostic report. Deliberately a <pre> with a copy button: the answer to
-       "why don't the animations run" is a set of facts about this specific
-       browser, and those facts have to get back to a human to be useful. -->
-  <div class="ir-diag" id="ir-diag">
-    <div class="ir-diag-head">
-      <strong>Animation diagnostics</strong>
-      <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-diag-copy" type="button">Copy</button>
-      <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-diag-close" type="button">Close</button>
-    </div>
-    <div class="ir-diag-verdict" id="ir-diag-verdict"></div>
-    <pre id="ir-diag-out"></pre>
   </div>
 
   <!-- Setup guard -->
@@ -1939,9 +1898,6 @@ ${AR_KEYFRAMES}
     // Motion
     this.qs("#ir-motion").addEventListener("change", (e) => this._setMotionPref(e.target.value));
     this.qs("#ir-motion-test").onclick = () => this._testMotion();
-    this.qs("#ir-motion-diag").onclick = () => this._diagnose();
-    this.qs("#ir-diag-copy").onclick = () => this._copyDiag();
-    this.qs("#ir-diag-close").onclick = () => this.qs("#ir-diag").classList.remove("show");
     // Auto mode must react if the OS setting flips mid-session (battery saver
     // kicking in is exactly when this happens).
     window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -2862,205 +2818,6 @@ ${AR_KEYFRAMES}
     if (learn) {
       learn.classList.add("learning");
       setTimeout(() => learn.classList.remove("learning"), 3000);
-    }
-  }
-
-  // ── Diagnostics ───────────────────────────────────────────────────────────
-
-  /**
-   * Probe what is actually happening, rather than guessing.
-   *
-   * Each probe isolates one link in the chain, and they're ordered so the
-   * first failure is the cause:
-   *
-   *   build       — is this even the new panel.js, or a cached old one?
-   *   style/sheet — did the <style> in innerHTML get parsed at all?
-   *   keyframes   — are the @keyframes rules reachable from that sheet?
-   *   scope       — can the animated element see them (shadow tree scope)?
-   *   match       — does the selector win? (animation-name !== "none")
-   *   object      — did the browser create an Animation? (getAnimations())
-   *   progress    — does currentTime actually advance? (frozen vs running)
-   *
-   * animation-name "none" means CSS lost — a theme, card-mod, or a browser
-   * extension is overriding it. A live Animation whose currentTime never
-   * moves means the browser is running it at zero speed, which is what
-   * Android's animator scale / WebView throttling does.
-   */
-  async _diagnose() {
-    const box = this.qs("#ir-diag");
-    const out = this.qs("#ir-diag-out");
-    const verdict = this.qs("#ir-diag-verdict");
-    if (!box || !out) return;
-    box.classList.add("show");
-    out.textContent = "Running probes…";
-
-    const L = [];
-    const add = (k, v) => L.push(`${String(k).padEnd(26)} ${v}`);
-    const problems = [];
-
-    // ── build identity
-    const headerVer = this.qs(".ir-version")?.textContent || "?";
-    add("panel build", PANEL_BUILD);
-    add("header version", headerVer);
-    const scripts = [...document.querySelectorAll("script")]
-      .map(x => x.src).filter(x => x && x.includes("ar_smart_ir_builder"));
-    add("script url", scripts.join(", ") || "(not a document-level <script>)");
-    if (PANEL_BUILD !== "2.4.0") problems.push("Stale panel.js is loaded.");
-
-    // ── motion preference
-    const osReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    add("prefers-reduced-motion", osReduced ? "REDUCE" : "no-preference");
-    add("motion pref", this._motionPref || "auto");
-    add("data-motion", this.qs("#ir-wrap")?.dataset.motion || "(unset)");
-
-    // ── did the stylesheet parse?
-    const styleEl = this.querySelector("style");
-    add("<style> element", styleEl ? "present" : "MISSING");
-    let sheet = null;
-    try { sheet = styleEl && styleEl.sheet; } catch (e) { /* noop */ }
-    add("style.sheet", sheet ? "attached" : "NULL");
-    if (styleEl && !sheet) problems.push("The panel's <style> never became a stylesheet.");
-
-    if (sheet) {
-      try { add("panel css rules", [...sheet.cssRules].length); }
-      catch (e) { add("panel css rules", "threw: " + e.message); }
-    }
-
-    // Keyframes now live inside the panel's own <style> (see the note above
-    // _render), so they're guaranteed same-scope. Verify they're actually in
-    // a stylesheet the panel can read — scan every <style> the panel owns.
-    let kfNames = [];
-    let kfFound = false;
-    this.querySelectorAll("style").forEach(st => {
-      if (!st.sheet) return;
-      try {
-        [...st.sheet.cssRules].forEach(r => {
-          if (r.type === 7 /* KEYFRAMES_RULE */) { kfNames.push(r.name); kfFound = true; }
-        });
-      } catch (e) { /* read guard */ }
-    });
-    add("keyframes location", kfFound ? "inside panel <style> (same scope)" : "NOT FOUND in panel");
-    add("@keyframes reachable", kfNames.length ? `${kfNames.length} (${kfNames.join(", ")})` : "0");
-    if (!kfFound) {
-      problems.push("No @keyframes found in the panel's own stylesheets — the inline keyframes block didn't parse.");
-    }
-
-    // ── tree scope: can the element see its own keyframes?
-    const root = this.getRootNode();
-    const scope = root === document
-      ? "document"
-      : (root.host ? `shadow root of <${root.host.localName}>` : "detached");
-    add("panel tree scope", scope);
-    add("style same scope", styleEl && styleEl.getRootNode() === root ? "yes" : "NO");
-    if (styleEl && styleEl.getRootNode() !== root) {
-      problems.push("The <style> and the panel are in different tree scopes — keyframes can't resolve.");
-    }
-
-    // ── does the CSS actually match, and does an Animation get created?
-    const probe = document.createElement("div");
-    probe.className = "ir-rise";
-    probe.style.cssText = "position:absolute;left:-9999px;top:0;width:10px;height:10px";
-    this.appendChild(probe);
-    await new Promise(r => requestAnimationFrame(r));
-
-    const cs = getComputedStyle(probe);
-    add("probe animation-name", cs.animationName);
-    add("probe animation-duration", cs.animationDuration);
-    add("probe animation-play-state", cs.animationPlayState);
-    if (cs.animationName === "none") {
-      problems.push("CSS matched nothing: animation-name resolves to \"none\". Something is overriding it (theme, card-mod, or an extension).");
-    }
-    if (cs.animationDuration === "0s") {
-      problems.push("animation-duration is 0s — animations are being zeroed out.");
-    }
-
-    const anims = probe.getAnimations ? probe.getAnimations() : [];
-    add("probe getAnimations()", anims.length);
-    if (cs.animationName !== "none" && anims.length === 0) {
-      problems.push("CSS resolved but the browser created no Animation object.");
-    }
-
-    if (anims.length) {
-      add("probe playState", anims[0].playState);
-      const t0 = Number(anims[0].currentTime) || 0;
-      await new Promise(r => setTimeout(r, 150));
-      const t1 = Number(anims[0].currentTime) || 0;
-      add("probe currentTime t0", Math.round(t0) + "ms");
-      add("probe currentTime +150ms", Math.round(t1) + "ms");
-      if (t1 <= t0) {
-        problems.push("The animation exists but its clock is frozen — the browser is running animations at zero speed.");
-      }
-    }
-    probe.remove();
-
-    // ── Rendered-pixel probe ─────────────────────────────────────────────
-    // getAnimations() says the animation runs, but "I see nothing" means the
-    // question is whether it changes visible pixels. ir-rise animates opacity
-    // 0→1 and translateY 10px→0. Sample the *computed* opacity/transform of a
-    // fresh, on-screen probe at the start and after a beat. If these numbers
-    // don't move, the browser is compositing past the animation (a paint /
-    // will-change / accelerated-layer issue), which is a different failure
-    // from "no animation object" and needs a different fix.
-    const vprobe = document.createElement("div");
-    vprobe.className = "ir-rise";
-    // On-screen but harmless: 1px, pinned top-left under everything.
-    vprobe.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;z-index:-1;pointer-events:none";
-    this.appendChild(vprobe);
-    // Restart the animation cleanly.
-    vprobe.style.animation = "none"; void vprobe.offsetWidth; vprobe.style.animation = "";
-    await new Promise(r => requestAnimationFrame(r));
-    const s0 = getComputedStyle(vprobe);
-    const op0 = s0.opacity, tf0 = s0.transform;
-    await new Promise(r => setTimeout(r, 120));
-    const s1 = getComputedStyle(vprobe);
-    const op1 = s1.opacity, tf1 = s1.transform;
-    add("probe opacity start→120ms", `${op0} → ${op1}`);
-    add("probe transform start→120ms", `${tf0} → ${tf1}`);
-    const opacityMoved = op0 !== op1;
-    const transformMoved = tf0 !== tf1;
-    add("rendered values changing", (opacityMoved || transformMoved) ? "YES" : "NO");
-    vprobe.remove();
-    if (anims.length && !opacityMoved && !transformMoved) {
-      problems.push("The animation object runs and its clock advances, but the element's computed opacity and transform never change. The browser is painting the final frame directly and skipping the interpolation — this is a rendering/compositing issue (GPU layer, will-change, or a forced-final-frame), not a CSS-scope or keyframe issue.");
-    }
-
-    // ── environment
-    add("document.getAnimations()", document.getAnimations ? document.getAnimations().length : "unsupported");
-    add("devicePixelRatio", window.devicePixelRatio);
-    add("viewport", `${window.innerWidth}x${window.innerHeight}`);
-    add("userAgent", navigator.userAgent);
-
-    out.textContent = L.join("\n");
-    this._diagReport = L.join("\n") + "\n\nVERDICT:\n" +
-      (problems.length ? problems.map(x => "- " + x).join("\n") : "- No fault found in the CSS chain.");
-
-    if (problems.length) {
-      verdict.className = "ir-diag-verdict bad";
-      verdict.textContent = problems.join(" ");
-    } else {
-      verdict.className = "ir-diag-verdict good";
-      verdict.textContent =
-        "Every link in the chain checks out: the stylesheet parsed, the keyframes are reachable, the selector matched, and the animation clock is advancing. If you still can't see anything, the animations are running but too subtle to notice — hit Test and watch the coloured bar.";
-    }
-  }
-
-  async _copyDiag() {
-    const text = this._diagReport || this.qs("#ir-diag-out")?.textContent || "";
-    try {
-      await navigator.clipboard.writeText(text);
-      this._showCallout("Diagnostics copied to clipboard.", "success");
-    } catch (e) {
-      // Clipboard API needs a secure context; plain-http HA instances don't
-      // have one. Select the text instead so a long-press copy works.
-      const pre = this.qs("#ir-diag-out");
-      if (pre) {
-        const range = document.createRange();
-        range.selectNodeContents(pre);
-        const sel = window.getSelection();
-        sel.removeAllRanges();
-        sel.addRange(range);
-      }
-      this._showCallout("Clipboard blocked (needs HTTPS) — the report is selected, copy it manually.", "warning");
     }
   }
 
