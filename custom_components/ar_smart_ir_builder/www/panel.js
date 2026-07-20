@@ -5,7 +5,76 @@
 // the OS reduced-motion setting with no way to say otherwise).
 
 const MOTION_PREF_KEY = "ar_smart_ir_builder.motion";
-const PANEL_BUILD = "2.3.0";
+const PANEL_BUILD = "2.10.0";
+const AR_KEYFRAMES = `
+@keyframes ir-spin { to { transform: rotate(360deg); } }
+@keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+@keyframes ir-panel-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes ir-callout-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@keyframes ir-shake {
+    10%, 90% { transform: translateX(-2px); }
+    20%, 80% { transform: translateX(3px); }
+    30%, 50%, 70% { transform: translateX(-4px); }
+    40%, 60% { transform: translateX(4px); }
+  }
+@keyframes ir-wave { 0% { transform: scale(1); opacity: .5; } 100% { transform: scale(1.85); opacity: 0; } }
+@keyframes ir-pop {
+    0% { transform: scale(1); } 35% { transform: scale(1.16); }
+    60% { transform: scale(.96); } 100% { transform: scale(1); }
+  }
+@keyframes ir-shimmer { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
+@keyframes ir-flash {
+    0% { box-shadow: 0 0 0 0 rgba(26,153,107,.5); }
+    100% { box-shadow: 0 0 0 14px rgba(26,153,107,0); }
+  }
+@keyframes ir-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes ir-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes ir-ring-fade { 0%, 100% { opacity: 0; } 50% { opacity: .5; } }
+@keyframes ir-selftest {
+    0%   { left: 0;   width: 24%; background: #e03030; }
+    25%  { left: 25%; background: #e0a030; }
+    50%  { left: 50%; background: #1a9966; }
+    75%  { left: 60%; background: #1b7aff; }
+    100% { left: 76%; width: 24%; background: #9b30e0; }
+  }
+
+  /* Virtual-remote press feedback (punchy) ------------------------------- */
+  @keyframes ir-btn-press {
+    0%   { transform: scale(1);   box-shadow: 0 0 0 0 rgba(27,122,255,.55); }
+    30%  { transform: scale(.9);  box-shadow: 0 0 0 5px rgba(27,122,255,.35); }
+    100% { transform: scale(1);   box-shadow: 0 0 0 14px rgba(27,122,255,0); }
+  }
+  @keyframes ir-btn-glow {
+    0%   { background: rgba(27,122,255,.45); border-color: rgba(27,122,255,.9); }
+    100% { background: rgba(127,127,127,.14); border-color: rgba(127,127,127,.28); }
+  }
+  /* Emitter dot pulse when a command fires */
+  @keyframes ir-emit-dot {
+    0%   { transform: scale(1);   background: #ff5252; box-shadow: 0 0 0 0 rgba(255,82,82,.7); }
+    25%  { transform: scale(1.6); background: #ff5252; box-shadow: 0 0 12px 4px rgba(255,82,82,.9); }
+    100% { transform: scale(1);   background: #b03030; box-shadow: 0 0 0 0 rgba(255,82,82,0); }
+  }
+  /* IR waves radiating out from the emitter */
+  @keyframes ir-emit-wave {
+    0%   { transform: translate(-50%, -50%) scale(.3); opacity: .9; border-width: 3px; }
+    100% { transform: translate(-50%, -50%) scale(3.4); opacity: 0; border-width: 1px; }
+  }
+
+  /* "Listening for IR" radar --------------------------------------------- */
+  @keyframes ir-radar-ping {
+    0%   { transform: translate(-50%, -50%) scale(.25); opacity: .85; }
+    100% { transform: translate(-50%, -50%) scale(1);   opacity: 0; }
+  }
+  @keyframes ir-radar-sweep {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+  @keyframes ir-radar-core {
+    0%, 100% { opacity: 1;   box-shadow: 0 0 0 0 rgba(250,150,0,.55); }
+    50%      { opacity: .55; box-shadow: 0 0 0 6px rgba(250,150,0,0); }
+  }
+`;
+
 
 const RECOMMENDED = {
   climate: [
@@ -710,9 +779,55 @@ class ARSmartIRPanel extends HTMLElement {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
+  /**
+   * Install the @keyframes into the panel's OWN tree scope.
+   *
+   * THE fix for the "animations don't run" saga, and the correction to the
+   * v1.10.2 near-miss.
+   *
+   * `@keyframes` are resolved per tree scope, and shadow DOM is a hard
+   * boundary that keyframe lookups do not cross — in EITHER direction.
+   * Depending on the HA build, this panel is mounted differently:
+   *   - some builds put it in the light DOM (document scope),
+   *   - current builds mount it inside <home-assistant-main>'s shadow root.
+   * The diagnostic report confirmed the latter: the panel's tree scope was a
+   * shadow root, the animation-name matched (ir-rise) and the play-state read
+   * "running", yet getAnimations() returned 0 — because the keyframes had been
+   * hoisted to document.head, which is OUTSIDE that shadow root, so the name
+   * bound to nothing. Right idea, wrong side of the boundary.
+   *
+   * The keyframes now live directly inside the panel's own innerHTML (see
+   * _render), as the first <style> block. This is the only placement immune to
+   * how and when HA mounts the panel:
+   *
+   *   - Earlier builds appended a keyframes <style> to document.head or to
+   *     this.getRootNode() at render time. Both broke, for different reasons.
+   *     document.head is outside the panel's shadow root, so the shadow-DOM
+   *     boundary blocked the binding (v1.10.2). getRootNode() at render time
+   *     ran before HA reparented the panel into <home-assistant-main>'s shadow
+   *     root, so the <style> was appended to the wrong (then-current) root and
+   *     orphaned when the panel moved — the report showed it simply MISSING
+   *     from the panel's final scope (v1.10.3).
+   *
+   *   - A <style> that is part of this.innerHTML is, by construction, always in
+   *     the same tree scope as the elements it animates, whatever scope that
+   *     turns out to be. Inside a shadow root, same-subtree @keyframes resolve
+   *     normally — that's how every shadow-DOM component ships animation. No
+   *     timing assumptions, nothing to orphan.
+   *
+   * (The v1.10.0 original also had the keyframes inline and they still didn't
+   * run — but that was the prefers-reduced-motion media query flattening them,
+   * which has since been removed. Inline placement itself was never the fault.)
+   */
+
   _render() {
     this.innerHTML = `
 <style>
+  /* Keyframes live here, inside the panel's own <style>, so they share tree
+     scope with the elements that reference them no matter where HA mounts the
+     panel (light DOM or shadow root). See the long note above _render. */
+${AR_KEYFRAMES}
+
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :host { display: block; }
 
@@ -877,12 +992,13 @@ class ARSmartIRPanel extends HTMLElement {
 
   /* Coverage bar */
   .ir-cov-bar {
-    height: 5px; border-radius: 3px;
+    height: 8px; border-radius: 5px;
     background: rgba(127,127,127,.15); margin: 10px 0 6px; overflow: hidden;
   }
   .ir-cov-fill {
-    height: 100%; border-radius: 3px;
-    background: #1a9966; transition: width .4s ease;
+    height: 100%; border-radius: 5px;
+    background: linear-gradient(90deg, #12805a, #1a9966 60%, #35c98d);
+    transition: width .55s cubic-bezier(.34,1.4,.5,1);
   }
 
   /* Stats */
@@ -935,37 +1051,16 @@ class ARSmartIRPanel extends HTMLElement {
      ══════════════════════════════════════════════════════════════════════ */
 
   /* 1 — ir-spin: in-button spinner while a request is in flight */
-  @keyframes ir-spin { to { transform: rotate(360deg); } }
-  /* 2 — ir-pulse: "we're waiting on you" breathing */
-  @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-  /* 3 — ir-panel-in: step panel enter */
-  @keyframes ir-panel-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  /* 4 — ir-callout-in: callout drop-in */
-  @keyframes ir-callout-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-  /* 5 — ir-shake: error callout */
-  @keyframes ir-shake {
-    10%, 90% { transform: translateX(-2px); }
-    20%, 80% { transform: translateX(3px); }
-    30%, 50%, 70% { transform: translateX(-4px); }
-    40%, 60% { transform: translateX(4px); }
-  }
-  /* 6 — ir-wave: IR emission rings off the Learn button while capturing */
-  @keyframes ir-wave { 0% { transform: scale(1); opacity: .5; } 100% { transform: scale(1.85); opacity: 0; } }
-  /* 7 — ir-pop: a command was just captured */
-  @keyframes ir-pop {
-    0% { transform: scale(1); } 35% { transform: scale(1.16); }
-    60% { transform: scale(.96); } 100% { transform: scale(1); }
-  }
-  /* 8 — ir-shimmer: coverage bar sweep when the number moves */
-  @keyframes ir-shimmer { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
-  /* 9 — ir-flash: remote button confirm ripple */
-  @keyframes ir-flash {
-    0% { box-shadow: 0 0 0 0 rgba(26,153,107,.5); }
-    100% { box-shadow: 0 0 0 14px rgba(26,153,107,0); }
-  }
-  /* 10 — ir-rise: staggered list entry */
-  @keyframes ir-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-
+    /* 2 — ir-pulse: "we're waiting on you" breathing */
+    /* 3 — ir-panel-in: step panel enter */
+    /* 4 — ir-callout-in: callout drop-in */
+    /* 5 — ir-shake: error callout */
+    /* 6 — ir-wave: IR emission rings off the Learn button while capturing */
+    /* 7 — ir-pop: a command was just captured */
+    /* 8 — ir-shimmer: coverage bar sweep when the number moves */
+    /* 9 — ir-flash: remote button confirm ripple */
+    /* 10 — ir-rise: staggered list entry */
+  
   /* ── Bindings ── */
 
   /* 1 */
@@ -1000,12 +1095,54 @@ class ARSmartIRPanel extends HTMLElement {
   /* 7 — _renderPills() tags the command that just came back */
   .ir-pill.just-learned { animation: ir-pop .45s ease-out both; }
 
-  /* 8 — _updateStats() adds .filling when the percentage changes */
+  /* Listening-for-IR radar (shown by _setLearning while capturing) */
+  .ir-radar {
+    display: flex; align-items: center; gap: 16px;
+    margin: 4px 0 14px; padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(250,150,0,.08);
+    border: 1px solid rgba(250,150,0,.28);
+    animation: ir-callout-in .24s ease-out both;
+  }
+  .ir-radar-scope {
+    position: relative; flex-shrink: 0;
+    width: 60px; height: 60px; border-radius: 50%;
+    background: radial-gradient(circle at center, rgba(250,150,0,.16), transparent 70%);
+    overflow: hidden;
+  }
+  .ir-radar-ring {
+    position: absolute; left: 50%; top: 50%;
+    width: 60px; height: 60px; border-radius: 50%;
+    border: 2px solid rgba(250,150,0,.6);
+    transform: translate(-50%, -50%) scale(.25);
+    animation: ir-radar-ping 2s ease-out infinite;
+  }
+  .ir-radar-ring:nth-child(2) { animation-delay: .66s; }
+  .ir-radar-ring:nth-child(3) { animation-delay: 1.33s; }
+  .ir-radar-core {
+    position: absolute; left: 50%; top: 50%;
+    width: 12px; height: 12px; border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: #fa9600;
+    animation: ir-radar-core 1.4s ease-in-out infinite;
+  }
+  .ir-radar-sweep {
+    position: absolute; left: 50%; top: 50%;
+    width: 30px; height: 30px; transform-origin: 0 0;
+    background: conic-gradient(from 0deg, rgba(250,150,0,.45), transparent 60deg);
+    animation: ir-radar-sweep 1.8s linear infinite;
+  }
+  .ir-radar-title { font-size: 14px; font-weight: 700; color: #b5730a; margin-bottom: 2px; }
+  .ir-radar-sub { font-size: 12px; color: var(--secondary-text-color); line-height: 1.4; }
+  .ir-wrap[data-motion="reduced"] .ir-radar-sweep,
+  .ir-wrap[data-motion="reduced"] .ir-radar-ring { animation-duration: 3s !important; }
+
+  /* 8 — _updateStats() adds .filling when the percentage climbs */
   .ir-cov-fill { position: relative; overflow: hidden; }
   .ir-cov-fill.filling::after {
-    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 45%;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent);
-    animation: ir-shimmer .9s ease-out;
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 55%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.85), transparent);
+    animation: ir-shimmer 1s ease-out;
   }
 
   /* 9 — _renderTestRemote() adds .sent on a successful test send */
@@ -1028,9 +1165,7 @@ class ARSmartIRPanel extends HTMLElement {
      way for the user to say "no, I want them". _applyMotionPref() reads the
      media query, applies the user's Auto/Full/Reduced choice on top, and sets
      the attribute. Auto still honours the OS. */
-  @keyframes ir-fade-in { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes ir-ring-fade { 0%, 100% { opacity: 0; } 50% { opacity: .5; } }
-
+    
   .ir-wrap[data-motion="reduced"] .ir-panel.active,
   .ir-wrap[data-motion="reduced"] .ir-anim-in,
   .ir-wrap[data-motion="reduced"] .ir-anim-shake,
@@ -1099,6 +1234,58 @@ class ARSmartIRPanel extends HTMLElement {
     color: var(--primary-text-color);
   }
   .ir-motion-state { font-family: monospace; }
+
+  /* ── Motion self-test ──────────────────────────────────────────────────
+     Every animation in the pack is 220-600ms and subtle by design, which is
+     fine in use but useless as a test: "did you see a 220ms fade?" is not a
+     question anyone can answer honestly on a phone. This one is 2.5s, moves
+     across the whole panel, and changes colour. If this doesn't move, CSS
+     animations are not running — full stop, no judgement call required. */
+  .ir-selftest {
+    position: relative; height: 16px; margin: 10px 0 0; flex-basis: 100%;
+    border-radius: 999px; overflow: hidden;
+    background: rgba(127,127,127,.16);
+    display: none;
+  }
+  .ir-selftest.running { display: block; }
+  .ir-selftest::after {
+    content: ""; position: absolute; top: 0; bottom: 0; left: 0;
+    width: 24%; border-radius: 999px;
+    /* Resting state is visible on its own, so even if the animation never
+       binds you see a static coloured block rather than nothing — that
+       distinguishes "animation didn't run" from "element didn't render". */
+    background: #1b7aff;
+  }
+  /* Loops while running so it can't be "already finished" by the time you look.
+     _testMotion() removes .running after ~5s. */
+  .ir-selftest.running::after { animation: ir-selftest 1.6s ease-in-out infinite; }
+
+  /* Diagnostics */
+  .ir-diag {
+    display: none; margin-top: 12px; border-radius: 12px;
+    border: 1px solid rgba(127,127,127,.25);
+    background: rgba(127,127,127,.06); overflow: hidden;
+  }
+  .ir-diag.show { display: block; }
+  .ir-diag-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 12px; border-bottom: 1px solid rgba(127,127,127,.18);
+    font-size: 13px;
+  }
+  .ir-diag-head strong { flex: 1; }
+  .ir-diag-verdict {
+    padding: 10px 12px; font-size: 13px; line-height: 1.5;
+    border-bottom: 1px solid rgba(127,127,127,.14);
+  }
+  .ir-diag-verdict.bad { background: rgba(220,50,50,.09); color: #c83030; }
+  .ir-diag-verdict.good { background: rgba(26,153,107,.1); }
+  .ir-diag pre {
+    margin: 0; padding: 12px; font-size: 11px; line-height: 1.6;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 340px; overflow: auto;
+    color: var(--primary-text-color);
+  }
 
   /* Delete confirm */
   .ir-delete-confirm {
@@ -1200,6 +1387,38 @@ class ARSmartIRPanel extends HTMLElement {
     font-size: 12px; font-weight: 700; letter-spacing: .08em;
     text-transform: uppercase; color: var(--secondary-text-color);
   }
+
+  /* IR emitter — the "signal going off" when a command fires */
+  .ir-remote-header {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 10px; margin-bottom: 16px;
+  }
+  .ir-remote-header .ir-remote-top { margin-bottom: 0; }
+  .ir-emitter {
+    position: relative; width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .ir-emitter-dot {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #b03030;
+    transition: background .2s;
+  }
+  .ir-emitter-wave {
+    position: absolute; left: 50%; top: 50%;
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 3px solid rgba(255,82,82,.8);
+    transform: translate(-50%, -50%) scale(.3);
+    opacity: 0;
+  }
+  /* When .firing is set, the dot pulses and the three waves radiate out,
+     staggered, so it reads as an IR burst leaving the emitter. */
+  .ir-emitter.firing .ir-emitter-dot { animation: ir-emit-dot .55s ease-out; }
+  .ir-emitter.firing .ir-emitter-wave { animation: ir-emit-wave .7s ease-out; }
+  .ir-emitter.firing .ir-emitter-wave:nth-child(3) { animation-delay: .12s; }
+  .ir-emitter.firing .ir-emitter-wave:nth-child(4) { animation-delay: .24s; }
+
   .ir-remote-row {
     display: flex; justify-content: center; gap: 10px;
     margin-bottom: 10px; flex-wrap: wrap;
@@ -1223,6 +1442,8 @@ class ARSmartIRPanel extends HTMLElement {
   .ir-rbtn-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color); }
   .ir-rbtn.missing { opacity: .28; cursor: not-allowed; }
   .ir-rbtn.missing:hover { background: rgba(127,127,127,.09); border-color: rgba(127,127,127,.22); transform: none; }
+  /* Instant press reaction — fires on tap, before the network round-trip. */
+  .ir-rbtn.pressing { animation: ir-btn-press .45s ease-out, ir-btn-glow .55s ease-out; }
   .ir-rbtn.testing { animation: ir-pulse .5s ease-in-out 3; }
   .ir-rbtn.sent { border-color: rgba(26,153,107,.5) !important; background: rgba(26,153,107,.15) !important; }
 
@@ -1274,7 +1495,7 @@ class ARSmartIRPanel extends HTMLElement {
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.10.0</div>
+      <div class="ir-version">v1.11.1</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -1290,6 +1511,21 @@ class ARSmartIRPanel extends HTMLElement {
     </select>
     <span class="ir-motion-state" id="ir-motion-state">—</span>
     <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-motion-test" type="button">Test</button>
+    <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-motion-diag" type="button">Diagnose</button>
+    <div class="ir-selftest" id="ir-selftest"></div>
+  </div>
+
+  <!-- Diagnostic report. Deliberately a <pre> with a copy button: the answer to
+       "why don't the animations run" is a set of facts about this specific
+       browser, and those facts have to get back to a human to be useful. -->
+  <div class="ir-diag" id="ir-diag">
+    <div class="ir-diag-head">
+      <strong>Animation diagnostics</strong>
+      <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-diag-copy" type="button">Copy</button>
+      <button class="ir-btn ir-btn-ghost ir-btn-sm" id="ir-diag-close" type="button">Close</button>
+    </div>
+    <div class="ir-diag-verdict" id="ir-diag-verdict"></div>
+    <pre id="ir-diag-out"></pre>
   </div>
 
   <!-- Setup guard -->
@@ -1470,6 +1706,21 @@ class ARSmartIRPanel extends HTMLElement {
       <div class="ir-cov-bar"><div class="ir-cov-fill" id="ir-cov-fill" style="width:0%"></div></div>
       <div id="ir-learn-callout" class="ir-callout" style="display:none"></div>
 
+      <!-- Listening-for-IR radar: shown only while a capture is in progress. -->
+      <div class="ir-radar" id="ir-radar" style="display:none">
+        <div class="ir-radar-scope">
+          <span class="ir-radar-ring"></span>
+          <span class="ir-radar-ring"></span>
+          <span class="ir-radar-ring"></span>
+          <span class="ir-radar-core"></span>
+          <span class="ir-radar-sweep"></span>
+        </div>
+        <div class="ir-radar-text">
+          <div class="ir-radar-title">Listening for IR…</div>
+          <div class="ir-radar-sub" id="ir-radar-sub">Point your remote at the receiver and press the button once.</div>
+        </div>
+      </div>
+
       <div class="ir-field" style="margin-bottom:0">
         <label>Capture mode</label>
         <div class="ir-mode-seg" id="ir-mode-seg" role="group" aria-label="Capture mode">
@@ -1559,10 +1810,18 @@ class ARSmartIRPanel extends HTMLElement {
       <!-- Left: virtual remote -->
       <div class="ir-card" style="padding:18px">
         <div class="ir-card-title">Virtual remote</div>
-        <div class="ir-card-desc" style="margin-bottom:12px">Click any button to fire the command immediately through your IR controller.</div>
+        <div class="ir-card-desc" style="margin-bottom:12px">Tap any button to fire the command through your IR controller — the button reacts and the emitter blasts IR waves.</div>
         <div class="ir-remote-wrap">
           <div class="ir-remote-shell">
-            <div class="ir-remote-top" id="ir-remote-name">Remote</div>
+            <div class="ir-remote-header">
+              <div class="ir-emitter" id="ir-emitter" title="IR emitter">
+                <span class="ir-emitter-dot"></span>
+                <span class="ir-emitter-wave"></span>
+                <span class="ir-emitter-wave"></span>
+                <span class="ir-emitter-wave"></span>
+              </div>
+              <div class="ir-remote-top" id="ir-remote-name">Remote</div>
+            </div>
             <div id="ir-remote-body"></div>
           </div>
           <div class="ir-test-strip" id="ir-test-strip">Ready — tap a button to test</div>
@@ -1680,6 +1939,9 @@ class ARSmartIRPanel extends HTMLElement {
     // Motion
     this.qs("#ir-motion").addEventListener("change", (e) => this._setMotionPref(e.target.value));
     this.qs("#ir-motion-test").onclick = () => this._testMotion();
+    this.qs("#ir-motion-diag").onclick = () => this._diagnose();
+    this.qs("#ir-diag-copy").onclick = () => this._copyDiag();
+    this.qs("#ir-diag-close").onclick = () => this.qs("#ir-diag").classList.remove("show");
     // Auto mode must react if the OS setting flips mid-session (battery saver
     // kicking in is exactly when this happens).
     window.matchMedia("(prefers-reduced-motion: reduce)")
@@ -1991,6 +2253,25 @@ class ARSmartIRPanel extends HTMLElement {
     btn.disabled = on;
     btn.classList.toggle("learning", on);
     btn.innerHTML = on ? `<span class="ir-spinner"></span>Learning…` : "Learn";
+
+    // Listening-for-IR radar — visible only during an active capture.
+    const radar = this.qs("#ir-radar");
+    if (radar) {
+      radar.style.display = on ? "flex" : "none";
+      if (on) {
+        // Restart the entrance animation each time capture begins.
+        radar.style.animation = "none"; void radar.offsetWidth; radar.style.animation = "";
+        const sub = this.qs("#ir-radar-sub");
+        const isRf = this._learnMode === "rf";
+        if (sub) {
+          sub.textContent = isRf
+            ? "Press and hold the RF button until capture completes."
+            : "Point your remote at the receiver and press the button once.";
+        }
+        const title = radar.querySelector(".ir-radar-title");
+        if (title) title.textContent = isRf ? "Listening for RF…" : "Listening for IR…";
+      }
+    }
   }
 
   // ── Paste single code ─────────────────────────────────────────────────────
@@ -2192,10 +2473,34 @@ class ARSmartIRPanel extends HTMLElement {
     });
   }
 
+  /**
+   * Trigger the IR emitter burst on the virtual remote.
+   *
+   * Adds .firing to the emitter, which pulses the dot and sends three
+   * staggered waves radiating outward. Self-clearing so it can retrigger on
+   * rapid presses (each press restarts the burst rather than queueing).
+   */
+  _fireEmitter() {
+    const emitter = this.qs("#ir-emitter");
+    if (!emitter) return;
+    emitter.classList.remove("firing");
+    void emitter.offsetWidth; // reflow so the animation restarts every press
+    emitter.classList.add("firing");
+    clearTimeout(this._emitterTimer);
+    this._emitterTimer = setTimeout(() => emitter.classList.remove("firing"), 800);
+  }
+
   async _testCommandDirect(cmdName, btnEl) {
     const key = this._currentKey;
     const entryId = this.qs("#ir-entry").value;
     if (!key || !entryId || !cmdName) return;
+
+    // Instant visual feedback — fire the moment the button is tapped, not after
+    // the round-trip. This is the reaction the remote was missing: the button
+    // reacts and the emitter blasts IR waves right away, so the remote feels
+    // alive even while the actual send is still in flight.
+    if (btnEl) this._anim(btnEl, "pressing");
+    this._fireEmitter();
 
     const strip = this.qs("#ir-test-strip");
     try {
@@ -2525,11 +2830,28 @@ class ARSmartIRPanel extends HTMLElement {
     this._motionPref = ["auto", "full", "reduced"].includes(stored) ? stored : "auto";
   }
 
-  /** Fire every animation in the pack at once, so "is it broken?" is a one-tap question. */
+  /**
+   * Fire an unmissable looping bar plus the real pack.
+   *
+   * The bar exists because the pack itself is a bad test instrument — every
+   * animation in it is 220-600ms and deliberately subtle, so "no animations"
+   * and "animations I didn't notice" look identical. The bar loops for 5s,
+   * travels the width, and cycles colours — and even at rest it shows a static
+   * coloured block, so "no bar at all" vs "bar present but not moving" are
+   * themselves distinguishable.
+   */
   _testMotion() {
+    const bar = this.qs("#ir-selftest");
+    if (bar) {
+      bar.classList.remove("running");
+      void bar.offsetWidth;
+      bar.classList.add("running");
+      setTimeout(() => bar.classList.remove("running"), 5200);
+    }
+
     const panel = this.qs(".ir-panel.active");
     if (panel) this._anim(panel, "active");
-    this._showCallout("Motion test — panel slide, callout drop-in, list rise and the coverage sweep should all be visible.", "info");
+    this._showCallout("Motion test running for 5s. Watch the bar just below this row: a coloured block should slide left↔right and change colour. If you see a static coloured block that never moves, animations are disabled somewhere; if you see no block at all, tell me that specifically.", "info");
     const fill = this.qs("#ir-cov-fill");
     if (fill) { this._anim(fill, "filling"); setTimeout(() => fill.classList.remove("filling"), 900); }
     this.querySelectorAll(".ir-rise").forEach(el => this._anim(el, "ir-rise"));
@@ -2540,6 +2862,205 @@ class ARSmartIRPanel extends HTMLElement {
     if (learn) {
       learn.classList.add("learning");
       setTimeout(() => learn.classList.remove("learning"), 3000);
+    }
+  }
+
+  // ── Diagnostics ───────────────────────────────────────────────────────────
+
+  /**
+   * Probe what is actually happening, rather than guessing.
+   *
+   * Each probe isolates one link in the chain, and they're ordered so the
+   * first failure is the cause:
+   *
+   *   build       — is this even the new panel.js, or a cached old one?
+   *   style/sheet — did the <style> in innerHTML get parsed at all?
+   *   keyframes   — are the @keyframes rules reachable from that sheet?
+   *   scope       — can the animated element see them (shadow tree scope)?
+   *   match       — does the selector win? (animation-name !== "none")
+   *   object      — did the browser create an Animation? (getAnimations())
+   *   progress    — does currentTime actually advance? (frozen vs running)
+   *
+   * animation-name "none" means CSS lost — a theme, card-mod, or a browser
+   * extension is overriding it. A live Animation whose currentTime never
+   * moves means the browser is running it at zero speed, which is what
+   * Android's animator scale / WebView throttling does.
+   */
+  async _diagnose() {
+    const box = this.qs("#ir-diag");
+    const out = this.qs("#ir-diag-out");
+    const verdict = this.qs("#ir-diag-verdict");
+    if (!box || !out) return;
+    box.classList.add("show");
+    out.textContent = "Running probes…";
+
+    const L = [];
+    const add = (k, v) => L.push(`${String(k).padEnd(26)} ${v}`);
+    const problems = [];
+
+    // ── build identity
+    const headerVer = this.qs(".ir-version")?.textContent || "?";
+    add("panel build", PANEL_BUILD);
+    add("header version", headerVer);
+    const scripts = [...document.querySelectorAll("script")]
+      .map(x => x.src).filter(x => x && x.includes("ar_smart_ir_builder"));
+    add("script url", scripts.join(", ") || "(not a document-level <script>)");
+    if (PANEL_BUILD !== "2.4.0") problems.push("Stale panel.js is loaded.");
+
+    // ── motion preference
+    const osReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    add("prefers-reduced-motion", osReduced ? "REDUCE" : "no-preference");
+    add("motion pref", this._motionPref || "auto");
+    add("data-motion", this.qs("#ir-wrap")?.dataset.motion || "(unset)");
+
+    // ── did the stylesheet parse?
+    const styleEl = this.querySelector("style");
+    add("<style> element", styleEl ? "present" : "MISSING");
+    let sheet = null;
+    try { sheet = styleEl && styleEl.sheet; } catch (e) { /* noop */ }
+    add("style.sheet", sheet ? "attached" : "NULL");
+    if (styleEl && !sheet) problems.push("The panel's <style> never became a stylesheet.");
+
+    if (sheet) {
+      try { add("panel css rules", [...sheet.cssRules].length); }
+      catch (e) { add("panel css rules", "threw: " + e.message); }
+    }
+
+    // Keyframes now live inside the panel's own <style> (see the note above
+    // _render), so they're guaranteed same-scope. Verify they're actually in
+    // a stylesheet the panel can read — scan every <style> the panel owns.
+    let kfNames = [];
+    let kfFound = false;
+    this.querySelectorAll("style").forEach(st => {
+      if (!st.sheet) return;
+      try {
+        [...st.sheet.cssRules].forEach(r => {
+          if (r.type === 7 /* KEYFRAMES_RULE */) { kfNames.push(r.name); kfFound = true; }
+        });
+      } catch (e) { /* read guard */ }
+    });
+    add("keyframes location", kfFound ? "inside panel <style> (same scope)" : "NOT FOUND in panel");
+    add("@keyframes reachable", kfNames.length ? `${kfNames.length} (${kfNames.join(", ")})` : "0");
+    if (!kfFound) {
+      problems.push("No @keyframes found in the panel's own stylesheets — the inline keyframes block didn't parse.");
+    }
+
+    // ── tree scope: can the element see its own keyframes?
+    const root = this.getRootNode();
+    const scope = root === document
+      ? "document"
+      : (root.host ? `shadow root of <${root.host.localName}>` : "detached");
+    add("panel tree scope", scope);
+    add("style same scope", styleEl && styleEl.getRootNode() === root ? "yes" : "NO");
+    if (styleEl && styleEl.getRootNode() !== root) {
+      problems.push("The <style> and the panel are in different tree scopes — keyframes can't resolve.");
+    }
+
+    // ── does the CSS actually match, and does an Animation get created?
+    const probe = document.createElement("div");
+    probe.className = "ir-rise";
+    probe.style.cssText = "position:absolute;left:-9999px;top:0;width:10px;height:10px";
+    this.appendChild(probe);
+    await new Promise(r => requestAnimationFrame(r));
+
+    const cs = getComputedStyle(probe);
+    add("probe animation-name", cs.animationName);
+    add("probe animation-duration", cs.animationDuration);
+    add("probe animation-play-state", cs.animationPlayState);
+    if (cs.animationName === "none") {
+      problems.push("CSS matched nothing: animation-name resolves to \"none\". Something is overriding it (theme, card-mod, or an extension).");
+    }
+    if (cs.animationDuration === "0s") {
+      problems.push("animation-duration is 0s — animations are being zeroed out.");
+    }
+
+    const anims = probe.getAnimations ? probe.getAnimations() : [];
+    add("probe getAnimations()", anims.length);
+    if (cs.animationName !== "none" && anims.length === 0) {
+      problems.push("CSS resolved but the browser created no Animation object.");
+    }
+
+    if (anims.length) {
+      add("probe playState", anims[0].playState);
+      const t0 = Number(anims[0].currentTime) || 0;
+      await new Promise(r => setTimeout(r, 150));
+      const t1 = Number(anims[0].currentTime) || 0;
+      add("probe currentTime t0", Math.round(t0) + "ms");
+      add("probe currentTime +150ms", Math.round(t1) + "ms");
+      if (t1 <= t0) {
+        problems.push("The animation exists but its clock is frozen — the browser is running animations at zero speed.");
+      }
+    }
+    probe.remove();
+
+    // ── Rendered-pixel probe ─────────────────────────────────────────────
+    // getAnimations() says the animation runs, but "I see nothing" means the
+    // question is whether it changes visible pixels. ir-rise animates opacity
+    // 0→1 and translateY 10px→0. Sample the *computed* opacity/transform of a
+    // fresh, on-screen probe at the start and after a beat. If these numbers
+    // don't move, the browser is compositing past the animation (a paint /
+    // will-change / accelerated-layer issue), which is a different failure
+    // from "no animation object" and needs a different fix.
+    const vprobe = document.createElement("div");
+    vprobe.className = "ir-rise";
+    // On-screen but harmless: 1px, pinned top-left under everything.
+    vprobe.style.cssText = "position:fixed;left:0;top:0;width:1px;height:1px;z-index:-1;pointer-events:none";
+    this.appendChild(vprobe);
+    // Restart the animation cleanly.
+    vprobe.style.animation = "none"; void vprobe.offsetWidth; vprobe.style.animation = "";
+    await new Promise(r => requestAnimationFrame(r));
+    const s0 = getComputedStyle(vprobe);
+    const op0 = s0.opacity, tf0 = s0.transform;
+    await new Promise(r => setTimeout(r, 120));
+    const s1 = getComputedStyle(vprobe);
+    const op1 = s1.opacity, tf1 = s1.transform;
+    add("probe opacity start→120ms", `${op0} → ${op1}`);
+    add("probe transform start→120ms", `${tf0} → ${tf1}`);
+    const opacityMoved = op0 !== op1;
+    const transformMoved = tf0 !== tf1;
+    add("rendered values changing", (opacityMoved || transformMoved) ? "YES" : "NO");
+    vprobe.remove();
+    if (anims.length && !opacityMoved && !transformMoved) {
+      problems.push("The animation object runs and its clock advances, but the element's computed opacity and transform never change. The browser is painting the final frame directly and skipping the interpolation — this is a rendering/compositing issue (GPU layer, will-change, or a forced-final-frame), not a CSS-scope or keyframe issue.");
+    }
+
+    // ── environment
+    add("document.getAnimations()", document.getAnimations ? document.getAnimations().length : "unsupported");
+    add("devicePixelRatio", window.devicePixelRatio);
+    add("viewport", `${window.innerWidth}x${window.innerHeight}`);
+    add("userAgent", navigator.userAgent);
+
+    out.textContent = L.join("\n");
+    this._diagReport = L.join("\n") + "\n\nVERDICT:\n" +
+      (problems.length ? problems.map(x => "- " + x).join("\n") : "- No fault found in the CSS chain.");
+
+    if (problems.length) {
+      verdict.className = "ir-diag-verdict bad";
+      verdict.textContent = problems.join(" ");
+    } else {
+      verdict.className = "ir-diag-verdict good";
+      verdict.textContent =
+        "Every link in the chain checks out: the stylesheet parsed, the keyframes are reachable, the selector matched, and the animation clock is advancing. If you still can't see anything, the animations are running but too subtle to notice — hit Test and watch the coloured bar.";
+    }
+  }
+
+  async _copyDiag() {
+    const text = this._diagReport || this.qs("#ir-diag-out")?.textContent || "";
+    try {
+      await navigator.clipboard.writeText(text);
+      this._showCallout("Diagnostics copied to clipboard.", "success");
+    } catch (e) {
+      // Clipboard API needs a secure context; plain-http HA instances don't
+      // have one. Select the text instead so a long-press copy works.
+      const pre = this.qs("#ir-diag-out");
+      if (pre) {
+        const range = document.createRange();
+        range.selectNodeContents(pre);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      this._showCallout("Clipboard blocked (needs HTTPS) — the report is selected, copy it manually.", "warning");
     }
   }
 
@@ -2752,22 +3273,77 @@ class ARSmartIRPanel extends HTMLElement {
     this._renderRepeatEditor();
   }
 
+  /**
+   * Tween a number in an element from its current value to `to`.
+   *
+   * Used for the coverage stats so the count climbs as commands are learned
+   * rather than snapping. Cheap: rAF-driven, ~450ms, eases out. Cancels any
+   * in-flight tween on the same element so rapid learns don't stack.
+   */
+  _countUp(node, to, opts = {}) {
+    if (!node) return;
+    const dur = opts.dur || 450;
+    const suffix = opts.suffix || "";
+    const from = parseInt(node.dataset.countVal || node.textContent, 10);
+    const start = Number.isFinite(from) ? from : to;
+    if (start === to) { node.textContent = to + suffix; node.dataset.countVal = to; return; }
+    if (node._countRAF) cancelAnimationFrame(node._countRAF);
+    const t0 = performance.now();
+    const tick = (now) => {
+      const p = Math.min(1, (now - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      const val = Math.round(start + (to - start) * eased);
+      node.textContent = val + suffix;
+      if (p < 1) { node._countRAF = requestAnimationFrame(tick); }
+      else { node.dataset.countVal = to; node._countRAF = null; }
+    };
+    node._countRAF = requestAnimationFrame(tick);
+  }
+
   _updateStats(learnedSet) {
     const learned = learnedSet || new Set(this._currentCommands());
     const rec = this._allRecommended();
     const covered = rec.filter(c => learned.has(c)).length;
     const pct = rec.length ? Math.round(covered / rec.length * 100) : 0;
     const el = n => this.qs(n);
-    if (el("#ir-stat-learned")) el("#ir-stat-learned").textContent = learned.size;
-    if (el("#ir-stat-cov")) el("#ir-stat-cov").textContent = `${covered} / ${rec.length}`;
+    // Count-up instead of snap, so the numbers climb as you learn.
+    if (el("#ir-stat-learned")) this._countUp(el("#ir-stat-learned"), learned.size);
+    if (el("#ir-stat-cov")) {
+      // "covered / total" — tween only the covered part; total is fixed.
+      const node = el("#ir-stat-cov");
+      const total = rec.length;
+      const from = parseInt(node.dataset.countVal || covered, 10);
+      const start = Number.isFinite(from) ? from : covered;
+      if (node._countRAF) cancelAnimationFrame(node._countRAF);
+      if (start === covered) {
+        node.textContent = `${covered} / ${total}`;
+        node.dataset.countVal = covered;
+      } else {
+        const t0 = performance.now();
+        const tick = (now) => {
+          const p = Math.min(1, (now - t0) / 450);
+          const eased = 1 - Math.pow(1 - p, 3);
+          const v = Math.round(start + (covered - start) * eased);
+          node.textContent = `${v} / ${total}`;
+          if (p < 1) node._countRAF = requestAnimationFrame(tick);
+          else { node.dataset.countVal = covered; node._countRAF = null; }
+        };
+        node._countRAF = requestAnimationFrame(tick);
+      }
+    }
     if (el("#ir-stat-name")) el("#ir-stat-name").textContent =
       this.qs("#ir-name")?.value || humanize(this._currentKey) || "—";
     const fill = el("#ir-cov-fill");
     if (fill) {
       if (fill.dataset.pct !== String(pct)) {
+        const prev = parseInt(fill.dataset.pct || "0", 10);
         fill.dataset.pct = String(pct);
-        this._anim(fill, "filling");
-        setTimeout(() => fill.classList.remove("filling"), 900);
+        // Bump = coverage went up: celebrate with the shimmer sweep.
+        // Drop (deleted a command) = just glide, no sweep.
+        if (pct > prev) {
+          this._anim(fill, "filling");
+          setTimeout(() => fill.classList.remove("filling"), 900);
+        }
       }
       fill.style.width = pct + "%";
     }
