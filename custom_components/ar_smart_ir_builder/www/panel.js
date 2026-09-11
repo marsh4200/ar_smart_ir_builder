@@ -5,7 +5,7 @@
 // the OS reduced-motion setting with no way to say otherwise).
 
 const MOTION_PREF_KEY = "ar_smart_ir_builder.motion";
-const PANEL_BUILD = "2.11.0";
+const PANEL_BUILD = "2.12.0";
 const AR_KEYFRAMES = `
 @keyframes ir-spin { to { transform: rotate(360deg); } }
 @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -851,81 +851,143 @@ ${AR_KEYFRAMES}
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :host { display: block; }
 
+  /* ══════════════════════════════════════════════════════════════════════
+     Design tokens — one place to tune radius / surface / shadow / accent.
+     Every color still routes through the active HA theme's CSS variables;
+     nothing here hardcodes a palette. Gradients and tinted shadows are
+     declared TWICE on purpose: a plain fallback first, then a color-mix()
+     version that overrides it where supported. On a browser without
+     color-mix() the second declaration is simply invalid and ignored, so
+     the plain fallback stands — no broken layout, just a flatter accent.
+     ══════════════════════════════════════════════════════════════════════ */
+  .ir-wrap {
+    --ir-radius-lg: 20px;
+    --ir-radius-md: 14px;
+    --ir-radius-sm: 10px;
+    --ir-border: rgba(127,127,127,.16);
+    --ir-border-strong: rgba(127,127,127,.32);
+    --ir-surface: var(--card-background-color, rgba(127,127,127,.035));
+    --ir-surface-2: var(--secondary-background-color, rgba(127,127,127,.06));
+    --ir-shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+    --ir-shadow-md: 0 1px 3px rgba(0,0,0,.06), 0 10px 24px -8px rgba(0,0,0,.16);
+    --ir-shadow-lg: 0 2px 6px rgba(0,0,0,.08), 0 22px 48px -14px rgba(0,0,0,.30);
+    --ir-accent-grad: var(--primary-color);
+    --ir-accent-grad: linear-gradient(135deg, var(--primary-color), color-mix(in srgb, var(--primary-color) 55%, #7c5cff));
+  }
+
   .ir-wrap {
     max-width: 1000px;
     margin: 0 auto;
-    padding: 20px 24px 60px;
+    padding: 24px 24px 64px;
     color: var(--primary-text-color);
-    font-family: var(--paper-font-body1_-_font-family, sans-serif);
+    font-family: var(--paper-font-body1_-_font-family, "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
   /* Header */
   .ir-header {
-    display: flex; align-items: center; gap: 14px; margin-bottom: 22px;
+    display: flex; align-items: center; gap: 16px; margin-bottom: 26px;
+    padding-bottom: 20px; position: relative;
+    border-bottom: 1px solid var(--ir-border);
+  }
+  .ir-header::after {
+    content: ""; position: absolute; left: 0; bottom: -1px; height: 1px; width: 220px;
+    max-width: 60%;
+    background: linear-gradient(90deg, var(--primary-color), transparent);
+    opacity: .55;
   }
   .ir-header-icon {
-    width: 44px; height: 44px; border-radius: 12px;
+    width: 48px; height: 48px; border-radius: 14px;
     background: var(--primary-color);
+    background: var(--ir-accent-grad);
     display: flex; align-items: center; justify-content: center;
-    font-size: 22px; flex-shrink: 0;
+    font-size: 23px; flex-shrink: 0;
+    box-shadow: 0 6px 18px -6px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.22);
+    box-shadow: 0 6px 18px -6px color-mix(in srgb, var(--primary-color) 60%, transparent), inset 0 1px 0 rgba(255,255,255,.22);
   }
-  .ir-header h1 { font-size: 20px; font-weight: 700; }
-  .ir-header .ir-version { font-size: 11px; color: var(--secondary-text-color); margin-top: 2px; }
+  .ir-header h1 { font-size: 21px; font-weight: 800; letter-spacing: -.02em; }
+  .ir-header .ir-version {
+    display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .04em;
+    color: var(--secondary-text-color); margin-top: 4px;
+    padding: 2px 9px; border-radius: 999px; background: var(--ir-surface-2);
+    border: 1px solid var(--ir-border);
+  }
   .ir-remote-select {
     margin-left: auto;
-    padding: 7px 10px; border-radius: 9px;
-    border: 1px solid rgba(127,127,127,.3);
-    background: var(--secondary-background-color, rgba(0,0,0,.04));
+    padding: 8px 12px; border-radius: 10px;
+    border: 1px solid var(--ir-border-strong);
+    background: var(--ir-surface-2);
     color: var(--primary-text-color); font-size: 13px;
     max-width: 220px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .ir-remote-select:focus {
+    outline: none; border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(127,127,127,.18);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
   }
 
   /* Setup guard */
   .ir-setup-guard {
-    display: none; padding: 28px; border-radius: 18px;
-    background: rgba(127,127,127,.07);
-    border: 1px solid rgba(127,127,127,.2);
+    display: none; padding: 40px 28px; border-radius: var(--ir-radius-lg);
+    background: var(--ir-surface);
+    border: 1px solid var(--ir-border);
+    box-shadow: var(--ir-shadow-md);
     text-align: center; margin-bottom: 20px;
   }
   .ir-setup-guard.show { display: block; }
-  .ir-setup-guard h2 { font-size: 17px; margin-bottom: 8px; }
-  .ir-setup-guard p { font-size: 14px; color: var(--secondary-text-color); margin-bottom: 18px; }
+  .ir-setup-guard h2 { font-size: 18px; font-weight: 800; letter-spacing: -.01em; margin-bottom: 10px; }
+  .ir-setup-guard p { font-size: 14px; color: var(--secondary-text-color); line-height: 1.6; max-width: 440px; margin: 0 auto 20px; }
 
-  /* Steps */
+  /* Steps — segmented pill nav */
   .ir-steps {
-    display: flex; gap: 0; border-bottom: 1px solid rgba(127,127,127,.18);
-    margin-bottom: 20px; overflow-x: auto;
+    display: flex; gap: 4px;
+    padding: 5px; border-radius: 999px;
+    background: var(--ir-surface-2);
+    border: 1px solid var(--ir-border);
+    box-shadow: var(--ir-shadow-sm);
+    margin-bottom: 24px; overflow-x: auto;
   }
   .ir-step-tab {
     display: flex; align-items: center; gap: 7px;
-    padding: 11px 16px;
-    background: none; border: none; border-bottom: 2px solid transparent;
+    padding: 9px 16px;
+    background: none; border: none; border-radius: 999px;
     cursor: pointer; font-size: 13px; font-weight: 600;
     color: var(--secondary-text-color);
-    transition: color .15s; white-space: nowrap;
+    transition: color .18s, background .18s, box-shadow .18s;
+    white-space: nowrap;
   }
-  .ir-step-tab:hover { color: var(--primary-text-color); }
-  .ir-step-tab.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+  .ir-step-tab:hover { color: var(--primary-text-color); background: rgba(127,127,127,.09); }
+  .ir-step-tab.active {
+    color: #fff;
+    background: var(--primary-color);
+    background: var(--ir-accent-grad);
+    box-shadow: 0 3px 12px -3px rgba(0,0,0,.3);
+    box-shadow: 0 3px 12px -3px color-mix(in srgb, var(--primary-color) 55%, transparent);
+  }
   .ir-step-num {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 20px; height: 20px; border-radius: 50%;
+    width: 21px; height: 21px; border-radius: 50%;
     font-size: 11px; font-weight: 700;
-    background: rgba(127,127,127,.14); color: var(--secondary-text-color);
+    background: rgba(127,127,127,.16); color: var(--secondary-text-color);
+    transition: background .18s, color .18s;
   }
-  .ir-step-tab.active .ir-step-num { background: var(--primary-color); color: #fff; }
+  .ir-step-tab.active .ir-step-num { background: rgba(255,255,255,.28); color: #fff; }
   .ir-step-tab.done .ir-step-num { background: #1a9966; color: #fff; }
   .ir-step-tab.done .ir-step-num::after { content: "✓"; }
 
   /* Cards */
   .ir-card {
-    background: var(--card-background-color, rgba(255,255,255,.03));
-    border: 1px solid rgba(127,127,127,.18);
-    border-radius: 18px; padding: 22px; margin-bottom: 14px;
+    background: var(--ir-surface);
+    border: 1px solid var(--ir-border);
+    border-radius: var(--ir-radius-lg); padding: 24px; margin-bottom: 16px;
+    box-shadow: var(--ir-shadow-md);
   }
-  .ir-card-title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+  .ir-card-title { font-size: 15px; font-weight: 700; letter-spacing: -.01em; margin-bottom: 4px; }
   .ir-card-desc {
     font-size: 13px; color: var(--secondary-text-color);
-    line-height: 1.55; margin-bottom: 18px;
+    line-height: 1.6; margin-bottom: 20px;
   }
 
   /* Panels */
@@ -933,118 +995,153 @@ ${AR_KEYFRAMES}
   .ir-panel.active { display: block; }
 
   /* Grid */
-  .ir-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .ir-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
   @media (max-width: 640px) { .ir-grid2 { grid-template-columns: 1fr; } }
 
   /* Fields */
-  .ir-field { margin-bottom: 14px; }
+  .ir-field { margin-bottom: 15px; }
   .ir-field label {
     display: block; font-size: 11px; font-weight: 700;
     text-transform: uppercase; letter-spacing: .07em;
-    color: var(--secondary-text-color); margin-bottom: 5px;
+    color: var(--secondary-text-color); margin-bottom: 6px;
   }
   .ir-field input, .ir-field select {
-    width: 100%; padding: 9px 12px; border-radius: 10px;
-    border: 1px solid rgba(127,127,127,.32);
-    background: var(--secondary-background-color, rgba(0,0,0,.04));
+    width: 100%; padding: 10px 13px; border-radius: var(--ir-radius-sm);
+    border: 1px solid var(--ir-border-strong);
+    background: var(--ir-surface-2);
     color: var(--primary-text-color); font-size: 14px;
-    transition: border-color .15s;
+    transition: border-color .15s, box-shadow .15s, background .15s;
   }
   .ir-field input:focus, .ir-field select:focus {
     outline: none; border-color: var(--primary-color);
+    background: var(--ir-surface);
+    box-shadow: 0 0 0 3px rgba(127,127,127,.18);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 18%, transparent);
   }
-  .ir-hint { font-size: 12px; color: var(--secondary-text-color); margin-top: 4px; }
+  .ir-hint { font-size: 12px; color: var(--secondary-text-color); margin-top: 5px; line-height: 1.5; }
 
   /* Buttons */
-  .ir-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .ir-actions { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
   .ir-btn {
-    min-height: 38px; padding: 0 16px; border-radius: 999px;
-    border: none; cursor: pointer; font-size: 13px; font-weight: 700;
-    transition: opacity .15s, transform .1s;
+    min-height: 40px; padding: 0 18px; border-radius: 999px;
+    border: none; cursor: pointer; font-size: 13px; font-weight: 700; letter-spacing: .01em;
+    transition: opacity .15s, transform .12s, box-shadow .15s, background .15s, border-color .15s;
   }
-  .ir-btn:active { transform: scale(.97); }
-  .ir-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; }
-  .ir-btn-primary { background: var(--primary-color); color: #fff; }
-  .ir-btn-secondary { background: rgba(127,127,127,.14); color: var(--primary-text-color); }
-  .ir-btn-ghost { background: transparent; border: 1px solid rgba(127,127,127,.25); color: var(--primary-text-color); }
-  .ir-btn-success { background: #1a9966; color: #fff; }
+  .ir-btn:hover { transform: translateY(-1px); }
+  .ir-btn:active { transform: scale(.97) translateY(0); }
+  .ir-btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+  .ir-btn-primary {
+    background: var(--primary-color);
+    background: var(--ir-accent-grad);
+    color: #fff;
+    box-shadow: 0 4px 14px -4px rgba(0,0,0,.35);
+    box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--primary-color) 60%, transparent);
+  }
+  .ir-btn-primary:hover {
+    box-shadow: 0 6px 18px -4px rgba(0,0,0,.4);
+    box-shadow: 0 6px 18px -4px color-mix(in srgb, var(--primary-color) 65%, transparent);
+  }
+  .ir-btn-secondary { background: var(--ir-surface-2); border: 1px solid var(--ir-border); color: var(--primary-text-color); }
+  .ir-btn-secondary:hover { background: rgba(127,127,127,.18); }
+  .ir-btn-ghost { background: transparent; border: 1px solid var(--ir-border-strong); color: var(--primary-text-color); }
+  .ir-btn-ghost:hover { background: rgba(127,127,127,.08); }
+  .ir-btn-success {
+    background: #1a9966;
+    background: linear-gradient(135deg, #1a9966, #22b884);
+    color: #fff;
+    box-shadow: 0 4px 14px -4px rgba(26,153,107,.5);
+  }
+  .ir-btn-success:hover { box-shadow: 0 6px 18px -4px rgba(26,153,107,.55); }
   .ir-btn-danger { background: transparent; border: 1px solid rgba(220,50,50,.4); color: #e03030; }
-  .ir-btn-sm { min-height: 30px; padding: 0 12px; font-size: 12px; }
+  .ir-btn-danger:hover { background: rgba(220,50,50,.09); }
+  .ir-btn-sm { min-height: 32px; padding: 0 13px; font-size: 12px; }
 
   /* Callouts */
   .ir-callout {
-    padding: 11px 14px; border-radius: 12px; font-size: 13px;
-    line-height: 1.5; margin-bottom: 14px; display: none;
+    padding: 12px 16px; border-radius: var(--ir-radius-sm); font-size: 13px;
+    line-height: 1.55; margin-bottom: 16px; display: none;
+    border-left-width: 3px; border-left-style: solid;
   }
   .ir-callout.show { display: block; }
-  .ir-callout.info { background: rgba(27,122,255,.09); border: 1px solid rgba(27,122,255,.22); }
-  .ir-callout.success { background: rgba(26,153,107,.1); border: 1px solid rgba(26,153,107,.25); }
-  .ir-callout.error { background: rgba(220,50,50,.09); border: 1px solid rgba(220,50,50,.25); color: #c83030; }
-  .ir-callout.learning { background: rgba(250,150,0,.09); border: 1px solid rgba(250,150,0,.3); }
-  .ir-callout.warning { background: rgba(250,150,0,.09); border: 1px solid rgba(250,150,0,.35); }
+  .ir-callout.info { background: rgba(27,122,255,.08); border: 1px solid rgba(27,122,255,.2); border-left-color: #1b7aff; }
+  .ir-callout.success { background: rgba(26,153,107,.09); border: 1px solid rgba(26,153,107,.22); border-left-color: #1a9966; }
+  .ir-callout.error { background: rgba(220,50,50,.08); border: 1px solid rgba(220,50,50,.22); border-left-color: #e03030; color: #c83030; }
+  .ir-callout.learning { background: rgba(250,150,0,.08); border: 1px solid rgba(250,150,0,.28); border-left-color: #fa9600; }
+  .ir-callout.warning { background: rgba(250,150,0,.08); border: 1px solid rgba(250,150,0,.32); border-left-color: #fa9600; }
 
   /* Profile list */
-  .ir-profile-list { display: grid; gap: 8px; }
+  .ir-profile-list { display: grid; gap: 10px; }
   .ir-profile-item {
-    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
-    border-radius: 12px; border: 1px solid rgba(127,127,127,.18);
-    background: var(--card-background-color, rgba(255,255,255,.03));
-    cursor: pointer; transition: border-color .15s, background .15s;
+    display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+    border-radius: var(--ir-radius-md); border: 1px solid var(--ir-border);
+    background: var(--ir-surface);
+    cursor: pointer; transition: border-color .15s, background .15s, transform .15s, box-shadow .15s;
   }
-  .ir-profile-item:hover { border-color: rgba(127,127,127,.35); }
-  .ir-profile-item.selected { border-color: var(--primary-color); background: rgba(27,122,255,.06); }
+  .ir-profile-item:hover { border-color: var(--ir-border-strong); transform: translateY(-1px); box-shadow: var(--ir-shadow-sm); }
+  .ir-profile-item.selected {
+    border-color: var(--primary-color);
+    background: rgba(127,127,127,.06);
+    background: color-mix(in srgb, var(--primary-color) 7%, var(--ir-surface));
+    box-shadow: 0 0 0 1px var(--primary-color) inset;
+  }
   .ir-profile-icon {
-    width: 36px; height: 36px; border-radius: 9px;
-    background: rgba(127,127,127,.12);
+    width: 40px; height: 40px; border-radius: 11px;
+    background: var(--ir-surface-2);
     display: flex; align-items: center; justify-content: center;
-    font-size: 17px; flex-shrink: 0;
+    font-size: 18px; flex-shrink: 0;
   }
   .ir-profile-name { font-weight: 700; font-size: 14px; }
   .ir-profile-meta { font-size: 12px; color: var(--secondary-text-color); }
   .ir-profile-badges { margin-left: auto; display: flex; gap: 6px; align-items: center; }
   .ir-badge {
-    font-size: 11px; font-weight: 700; padding: 3px 9px;
+    font-size: 11px; font-weight: 700; padding: 4px 10px;
     border-radius: 999px;
     background: rgba(127,127,127,.12); color: var(--secondary-text-color);
   }
-  .ir-badge.green { background: rgba(26,153,107,.15); color: #0f6e56; }
-  .ir-badge.blue { background: rgba(27,122,255,.12); color: #185fa5; }
+  .ir-badge.green { background: rgba(26,153,107,.16); color: #0f6e56; }
+  .ir-badge.blue { background: rgba(27,122,255,.13); color: #185fa5; }
 
   /* Coverage bar */
   .ir-cov-bar {
-    height: 8px; border-radius: 5px;
-    background: rgba(127,127,127,.15); margin: 10px 0 6px; overflow: hidden;
+    height: 10px; border-radius: 6px;
+    background: var(--ir-surface-2); margin: 12px 0 8px; overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,.08);
   }
   .ir-cov-fill {
-    height: 100%; border-radius: 5px;
+    height: 100%; border-radius: 6px;
     background: linear-gradient(90deg, #12805a, #1a9966 60%, #35c98d);
+    box-shadow: 0 0 10px rgba(26,153,107,.45);
     transition: width .55s cubic-bezier(.34,1.4,.5,1);
   }
 
   /* Stats */
-  .ir-stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+  .ir-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
   .ir-stat {
-    flex: 1; min-width: 90px; padding: 10px 13px;
-    border-radius: 11px;
-    background: var(--card-background-color, rgba(255,255,255,.03));
-    border: 1px solid rgba(127,127,127,.14);
+    flex: 1; min-width: 96px; padding: 12px 15px;
+    border-radius: var(--ir-radius-md);
+    background: var(--ir-surface);
+    border: 1px solid var(--ir-border);
+    box-shadow: var(--ir-shadow-sm);
   }
-  .ir-stat-k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color); margin-bottom: 3px; }
-  .ir-stat-v { font-size: 16px; font-weight: 700; }
+  .ir-stat-k { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; color: var(--secondary-text-color); margin-bottom: 4px; }
+  .ir-stat-v { font-size: 18px; font-weight: 800; letter-spacing: -.01em; }
 
   /* Pills */
-  .ir-pill-group { margin-top: 18px; }
-  .ir-pill-group-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--secondary-text-color); margin-bottom: 8px; }
-  .ir-pill-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ir-pill-group { margin-top: 20px; }
+  .ir-pill-group-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--secondary-text-color); margin-bottom: 9px; }
+  .ir-pill-row { display: flex; flex-wrap: wrap; gap: 7px; }
   .ir-pill {
-    padding: 6px 13px; border-radius: 999px; font-size: 12px; font-weight: 600;
-    border: 1px solid rgba(127,127,127,.25); background: rgba(127,127,127,.08);
+    padding: 7px 14px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--ir-border-strong); background: var(--ir-surface-2);
     cursor: pointer; color: var(--primary-text-color);
-    transition: background .12s, border-color .12s, transform .08s;
+    transition: background .12s, border-color .12s, transform .1s, box-shadow .12s;
   }
-  .ir-pill:hover { background: rgba(127,127,127,.16); border-color: rgba(127,127,127,.4); }
+  .ir-pill:hover { background: rgba(127,127,127,.18); border-color: var(--ir-border-strong); transform: translateY(-1px); }
   .ir-pill:active { transform: scale(.94); }
-  .ir-pill.learned { background: rgba(26,153,107,.13); border-color: rgba(26,153,107,.35); color: #0f6e56; }
+  .ir-pill.learned {
+    background: rgba(26,153,107,.14); border-color: rgba(26,153,107,.4); color: #0f6e56;
+    box-shadow: 0 1px 8px -3px rgba(26,153,107,.5);
+  }
 
   /* Learn row */
   .ir-cmd-row { display: flex; gap: 8px; align-items: flex-end; }
@@ -1052,16 +1149,24 @@ ${AR_KEYFRAMES}
 
   /* IR / RF mode toggle */
   .ir-mode-seg {
-    display: inline-flex; border: 1px solid rgba(127,127,127,.25);
+    display: inline-flex; padding: 3px; gap: 2px;
+    border: 1px solid var(--ir-border);
+    background: var(--ir-surface-2);
     border-radius: 999px; overflow: hidden;
   }
   .ir-mode-seg button {
     border: none; background: transparent; color: var(--secondary-text-color);
     font-size: 12px; font-weight: 700; padding: 7px 18px; cursor: pointer;
+    border-radius: 999px;
     transition: background .15s, color .15s; min-height: 32px;
   }
-  .ir-mode-seg button + button { border-left: 1px solid rgba(127,127,127,.25); }
-  .ir-mode-seg button.active { background: var(--primary-color); color: #fff; }
+  .ir-mode-seg button.active {
+    background: var(--primary-color);
+    background: var(--ir-accent-grad);
+    color: #fff;
+    box-shadow: 0 2px 8px -2px rgba(0,0,0,.3);
+    box-shadow: 0 2px 8px -2px color-mix(in srgb, var(--primary-color) 50%, transparent);
+  }
   .ir-mode-seg button:active { transform: scale(.97); }
   .ir-mode-hint { font-size: 12px; color: var(--secondary-text-color); margin: 6px 0 12px; line-height: 1.45; }
 
@@ -1080,7 +1185,7 @@ ${AR_KEYFRAMES}
     /* 8 — ir-shimmer: coverage bar sweep when the number moves */
     /* 9 — ir-flash: remote button confirm ripple */
     /* 10 — ir-rise: staggered list entry */
-  
+
   /* ── Bindings ── */
 
   /* 1 */
@@ -1185,7 +1290,7 @@ ${AR_KEYFRAMES}
      way for the user to say "no, I want them". _applyMotionPref() reads the
      media query, applies the user's Auto/Full/Reduced choice on top, and sets
      the attribute. Auto still honours the OS. */
-    
+
   .ir-wrap[data-motion="reduced"] .ir-panel.active,
   .ir-wrap[data-motion="reduced"] .ir-anim-in,
   .ir-wrap[data-motion="reduced"] .ir-anim-shake,
@@ -1201,14 +1306,15 @@ ${AR_KEYFRAMES}
 
   /* Remote preview (step 2) */
   .ir-preview-card {
-    margin-top: 18px; border-radius: 14px;
-    border: 1px solid rgba(127,127,127,.2);
-    background: rgba(127,127,127,.05);
+    margin-top: 20px; border-radius: var(--ir-radius-md);
+    border: 1px solid var(--ir-border);
+    background: var(--ir-surface-2);
+    box-shadow: var(--ir-shadow-sm);
     overflow: hidden;
   }
   .ir-preview-head {
     display: flex; align-items: center; gap: 12px;
-    padding: 12px 14px; border-bottom: 1px solid rgba(127,127,127,.16);
+    padding: 13px 16px; border-bottom: 1px solid var(--ir-border);
   }
   .ir-preview-head > div:first-child { flex: 1; min-width: 0; }
   .ir-preview-title { font-size: 13px; font-weight: 700; }
@@ -1220,7 +1326,7 @@ ${AR_KEYFRAMES}
   .ir-preview-card.collapsed .ir-preview-body { display: none; }
   .ir-preview-shell { margin: 0; }
   .ir-preview-shell .ir-rbtn { cursor: default; }
-  .ir-preview-shell .ir-rbtn:hover { background: rgba(127,127,127,.09); border-color: rgba(127,127,127,.22); }
+  .ir-preview-shell .ir-rbtn:hover { background: rgba(127,127,127,.09); border-color: var(--ir-border); }
   .ir-preview-shell .ir-rbtn:active { transform: none; }
   .ir-preview-shell .ir-rbtn.todo { opacity: .55; border-style: dashed; }
   .ir-preview-shell .ir-rbtn.done { background: rgba(26,153,107,.13); border-color: rgba(26,153,107,.4); }
@@ -1230,7 +1336,7 @@ ${AR_KEYFRAMES}
   .ir-preview-legend span { display: flex; align-items: center; gap: 7px; }
   .ir-legend-dot {
     width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
-    border: 1px solid rgba(127,127,127,.4); background: transparent;
+    border: 1px solid var(--ir-border-strong); background: transparent;
   }
   .ir-legend-dot.done { background: rgba(26,153,107,.5); border-color: rgba(26,153,107,.6); }
   .ir-legend-dot.todo { border-style: dashed; }
@@ -1243,14 +1349,14 @@ ${AR_KEYFRAMES}
   .ir-motion-bar {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     margin-top: 14px; padding-top: 12px;
-    border-top: 1px solid rgba(127,127,127,.16);
+    border-top: 1px solid var(--ir-border);
     font-size: 11px; color: var(--secondary-text-color);
   }
   .ir-motion-bar label { font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
   .ir-motion-bar select {
     padding: 4px 8px; border-radius: 7px; font-size: 11px;
-    border: 1px solid rgba(127,127,127,.3);
-    background: var(--secondary-background-color, rgba(0,0,0,.04));
+    border: 1px solid var(--ir-border-strong);
+    background: var(--ir-surface-2);
     color: var(--primary-text-color);
   }
   .ir-motion-state { font-family: monospace; }
@@ -1282,7 +1388,7 @@ ${AR_KEYFRAMES}
 
   /* Delete confirm */
   .ir-delete-confirm {
-    display: none; margin-top: 10px; padding: 12px 14px; border-radius: 11px;
+    display: none; margin-top: 10px; padding: 12px 14px; border-radius: var(--ir-radius-sm);
     background: rgba(220,50,50,.07); border: 1px solid rgba(220,50,50,.22);
   }
   .ir-delete-confirm.show { display: block; }
@@ -1297,9 +1403,9 @@ ${AR_KEYFRAMES}
     display: grid;
     grid-template-columns: minmax(140px, 1.4fr) 78px 92px 70px 36px;
     gap: 8px; align-items: center;
-    padding: 8px 10px; border-radius: 10px;
+    padding: 8px 10px; border-radius: var(--ir-radius-sm);
     background: rgba(127,127,127,.06);
-    border: 1px solid rgba(127,127,127,.15);
+    border: 1px solid var(--ir-border);
     margin-bottom: 6px;
   }
   .ir-rep-row.is-active {
@@ -1336,7 +1442,7 @@ ${AR_KEYFRAMES}
   .ir-checklist { display: grid; gap: 6px; }
   .ir-cl-item {
     display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 10px 13px; border-radius: 11px;
+    padding: 10px 13px; border-radius: var(--ir-radius-sm);
     background: rgba(127,127,127,.07); border: 1px solid transparent;
     cursor: pointer; transition: background .12s;
   }
@@ -1353,13 +1459,17 @@ ${AR_KEYFRAMES}
 
   /* Raw export */
   .ir-mono {
-    font-family: "JetBrains Mono", "Fira Code", monospace; font-size: 12px;
-    padding: 14px; border-radius: 12px;
-    background: rgba(0,0,0,.2); color: rgba(255,255,255,.8);
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace; font-size: 12px;
+    padding: 16px; border-radius: var(--ir-radius-md);
+    background: rgba(0,0,0,.22); color: rgba(255,255,255,.82);
+    border: 1px solid rgba(255,255,255,.06);
     white-space: pre-wrap; word-break: break-all;
-    max-height: 220px; overflow-y: auto; margin-top: 10px;
+    max-height: 240px; overflow-y: auto; margin-top: 12px;
   }
-  details summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--secondary-text-color); margin-top: 14px; }
+  .ir-mono::-webkit-scrollbar { width: 8px; }
+  .ir-mono::-webkit-scrollbar-track { background: transparent; }
+  .ir-mono::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 4px; }
+  details summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--secondary-text-color); margin-top: 14px; transition: color .15s; }
   details summary:hover { color: var(--primary-text-color); }
   .ir-advanced summary { font-size: 12px; margin-top: 0; margin-bottom: 12px; }
 
@@ -1370,10 +1480,11 @@ ${AR_KEYFRAMES}
   }
   .ir-remote-shell {
     background: var(--card-background-color, #1e1e2e);
-    border: 1px solid rgba(127,127,127,.25);
-    border-radius: 28px; padding: 22px 18px 28px;
+    background: linear-gradient(165deg, rgba(127,127,127,.06), transparent 40%), var(--card-background-color, #1e1e2e);
+    border: 1px solid var(--ir-border);
+    border-radius: 30px; padding: 22px 18px 28px;
     width: 100%; max-width: 340px;
-    box-shadow: 0 4px 24px rgba(0,0,0,.18);
+    box-shadow: var(--ir-shadow-lg), inset 0 1px 0 rgba(255,255,255,.05);
   }
   .ir-remote-top {
     text-align: center; margin-bottom: 16px;
@@ -1419,22 +1530,23 @@ ${AR_KEYFRAMES}
   .ir-rbtn {
     display: flex; flex-direction: column; align-items: center; gap: 3px;
     min-width: 58px; min-height: 52px; padding: 8px 10px;
-    border-radius: 14px; border: 1px solid rgba(127,127,127,.22);
-    background: rgba(127,127,127,.09);
+    border-radius: 15px; border: 1px solid var(--ir-border);
+    background: var(--ir-surface-2);
     cursor: pointer; color: var(--primary-text-color);
     font-size: 18px; font-weight: 700;
-    transition: background .1s, transform .08s, border-color .1s;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 1px 3px rgba(0,0,0,.1);
+    transition: background .1s, transform .08s, border-color .1s, box-shadow .1s;
     position: relative;
   }
-  .ir-rbtn:hover { background: rgba(127,127,127,.18); border-color: rgba(127,127,127,.4); }
-  .ir-rbtn:active { transform: scale(.92); background: rgba(127,127,127,.28); }
-  .ir-rbtn.power { background: rgba(220,50,50,.12); border-color: rgba(220,50,50,.3); }
+  .ir-rbtn:hover { background: rgba(127,127,127,.18); border-color: var(--ir-border-strong); transform: translateY(-1px); }
+  .ir-rbtn:active { transform: scale(.92); background: rgba(127,127,127,.28); box-shadow: none; }
+  .ir-rbtn.power { background: rgba(220,50,50,.12); border-color: rgba(220,50,50,.32); }
   .ir-rbtn.power:hover { background: rgba(220,50,50,.22); }
-  .ir-rbtn.app { background: rgba(27,122,255,.1); border-color: rgba(27,122,255,.25); font-size: 13px; }
+  .ir-rbtn.app { background: rgba(27,122,255,.1); border-color: rgba(27,122,255,.28); font-size: 13px; }
   .ir-rbtn.app:hover { background: rgba(27,122,255,.2); }
   .ir-rbtn-label { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--secondary-text-color); }
   .ir-rbtn.missing { opacity: .28; cursor: not-allowed; }
-  .ir-rbtn.missing:hover { background: rgba(127,127,127,.09); border-color: rgba(127,127,127,.22); transform: none; }
+  .ir-rbtn.missing:hover { background: rgba(127,127,127,.09); border-color: var(--ir-border); transform: none; }
   /* Instant press reaction — fires on tap, before the network round-trip. */
   .ir-rbtn.pressing { animation: ir-btn-press .45s ease-out, ir-btn-glow .55s ease-out; }
   .ir-rbtn.testing { animation: ir-pulse .5s ease-in-out 3; }
@@ -1451,7 +1563,14 @@ ${AR_KEYFRAMES}
   .ir-dpad .down  { grid-area: down; }
   .ir-dpad .left  { grid-area: left; }
   .ir-dpad .right { grid-area: right; }
-  .ir-dpad .ok    { grid-area: ok; border-radius: 50%; width: 52px; height: 52px; }
+  .ir-dpad .ok    {
+    grid-area: ok; border-radius: 50%; width: 52px; height: 52px;
+    background: var(--primary-color);
+    background: var(--ir-accent-grad);
+    color: #fff; border-color: transparent;
+    box-shadow: 0 4px 14px -4px rgba(0,0,0,.4);
+    box-shadow: 0 4px 14px -4px color-mix(in srgb, var(--primary-color) 55%, transparent);
+  }
 
   /* Test feedback strip */
   .ir-test-strip {
@@ -1468,17 +1587,21 @@ ${AR_KEYFRAMES}
   }
   @media (max-width: 640px) { .ir-export-grid { grid-template-columns: 1fr; } }
   .ir-export-card {
-    padding: 18px; border-radius: 14px;
-    border: 1px solid rgba(127,127,127,.18);
-    background: var(--card-background-color, rgba(255,255,255,.03));
+    padding: 20px; border-radius: var(--ir-radius-md);
+    border: 1px solid var(--ir-border);
+    background: var(--ir-surface);
+    box-shadow: var(--ir-shadow-sm);
+    transition: transform .15s, box-shadow .15s;
   }
-  .ir-export-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
-  .ir-export-card p { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 14px; line-height: 1.5; }
+  .ir-export-card:hover { transform: translateY(-2px); box-shadow: var(--ir-shadow-md); }
+  .ir-export-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 7px; }
+  .ir-export-card p { font-size: 12px; color: var(--secondary-text-color); margin-bottom: 16px; line-height: 1.55; }
 
   @media (max-width: 540px) {
-    .ir-wrap { padding: 14px 14px 40px; }
-    .ir-step-tab { padding: 10px 11px; font-size: 12px; }
+    .ir-wrap { padding: 16px 14px 44px; }
+    .ir-step-tab { padding: 9px 12px; font-size: 12px; }
   }
+
 </style>
 
 <div class="ir-wrap" id="ir-wrap">
@@ -1488,7 +1611,7 @@ ${AR_KEYFRAMES}
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.12.0</div>
+      <div class="ir-version">v1.13.0</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
