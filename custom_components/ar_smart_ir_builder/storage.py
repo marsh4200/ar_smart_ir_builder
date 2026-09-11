@@ -41,6 +41,33 @@ def canonical_device_type(value: Any) -> str:
     return DEVICE_TYPE_ALIASES.get(raw, raw)
 
 
+_RELATIVE_MODE_ALIASES = {"fan": "fan_only"}
+_VALID_RELATIVE_MODES = {"cool", "heat", "dry", "auto", "fan_only"}
+
+
+def _normalize_relative_modes(raw: Any) -> list[str]:
+    """Sanitize the relative-style Mode-button cycle order.
+
+    Keeps user-given order, drops anything not a recognised HVAC mode, and
+    dedupes (a mode can only occupy one position in the cycle). An empty
+    result means "not customised" — climate.py falls back to its own
+    default order in that case.
+    """
+    if not isinstance(raw, list):
+        return []
+    seen: set[str] = set()
+    modes: list[str] = []
+    for item in raw:
+        if not isinstance(item, str):
+            continue
+        mode = _RELATIVE_MODE_ALIASES.get(item.strip().lower(), item.strip().lower())
+        if mode not in _VALID_RELATIVE_MODES or mode in seen:
+            continue
+        seen.add(mode)
+        modes.append(mode)
+    return modes
+
+
 def _normalize_command_options(raw: Any, commands: dict[str, Any]) -> dict[str, Any]:
     """Sanitize per-command repeat policy. Drops invalid/stale entries."""
     if not isinstance(raw, dict):
@@ -145,6 +172,7 @@ def normalize_device(device: dict[str, Any] | None = None) -> dict[str, Any]:
         ),
         "command_options": command_options,
         "climate_style": "relative" if raw.get("climate_style") == "relative" else "absolute",
+        "relative_modes": _normalize_relative_modes(raw.get("relative_modes")),
     }
     return {**raw, **normalized}
 

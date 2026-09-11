@@ -86,7 +86,7 @@ const RECOMMENDED = {
   // For remotes with a single cycling "Mode" button and Temp +/- buttons
   // instead of a discrete button per mode/temperature value.
   climate_relative: [
-    ["Power", ["power_toggle","off"]],
+    ["Power", ["power_toggle","on","off"]],
     ["Mode", ["mode_toggle"]],
     ["Temperature", ["temp_up","temp_down"]],
     ["Fan speed", ["fan_toggle","fan_low","fan_medium","fan_high","fan_auto"]],
@@ -184,7 +184,7 @@ const COMMAND_HINTS = {
   timer_1h:"Timer 1 hour", timer_2h:"Timer 2 hours",
   timer_4h:"Timer 4 hours", timer_8h:"Timer 8 hours",
   power_toggle:"Power toggle (single button)",
-  mode_toggle:"Mode button — cycles cool/heat/dry/auto/fan on each press",
+  mode_toggle:"Mode button — cycles between the modes you list below on each press",
   temp_up:"Temperature up (single step)", temp_down:"Temperature down (single step)",
   fan_toggle:"Fan speed button — cycles speeds on each press",
   swing_toggle:"Swing button — toggles on each press",
@@ -715,6 +715,7 @@ const REMOTE_LAYOUTS = {
   climate_relative: [
     { type: "row", btns: [
       { cmd: "power_toggle", icon: "⏻", label: "Power", cls: "power" },
+      { cmd: "on", icon: "▶", label: "On" },
       { cmd: "off", icon: "⏹", label: "Off" },
     ]},
     { type: "row", btns: [
@@ -1598,6 +1599,11 @@ ${AR_KEYFRAMES}
             </select>
             <div class="ir-hint">If your remote only has a single "Mode" button and Temp +/- buttons instead of separate Cool/Heat/Dry and 18°/20°/22° buttons, pick the second option.</div>
           </div>
+          <div class="ir-field" id="ir-relative-modes-field" style="display:none">
+            <label>Mode cycle order <span style="font-weight:400;text-transform:none;letter-spacing:0">(what "Mode" actually cycles through)</span></label>
+            <input id="ir-relative-modes" placeholder="cool, heat" autocomplete="off">
+            <div class="ir-hint">Comma-separated, in the exact order pressing Mode steps through on your remote — e.g. a simple cool/heat unit is just "cool, heat". Only list modes your remote actually has (from: cool, heat, dry, auto, fan_only). Leave blank to assume all five in that order.</div>
+          </div>
         </div>
         <details class="ir-advanced">
           <summary>Advanced fields (optional)</summary>
@@ -1893,7 +1899,10 @@ ${AR_KEYFRAMES}
       const collapsed = card.classList.toggle("collapsed");
       this.qs("#ir-preview-toggle").textContent = collapsed ? "Show" : "Hide";
     };
-    this.qs("#ir-climate-style").addEventListener("change", () => this._refreshDerivedUI());
+    this.qs("#ir-climate-style").addEventListener("change", () => {
+      this._toggleRelativeModesField();
+      this._refreshDerivedUI();
+    });
 
     // Motion
     this.qs("#ir-motion").addEventListener("change", (e) => this._setMotionPref(e.target.value));
@@ -2061,6 +2070,7 @@ ${AR_KEYFRAMES}
     delete this.qs("#ir-key").dataset.manualEdit;
     this.qs("#ir-type").value = "climate";
     this.qs("#ir-climate-style").value = "absolute";
+    this.qs("#ir-relative-modes").value = "";
     this._toggleClimateStyleField();
     this._renderPresetSelect("generic");
     this._typeHint();
@@ -2079,6 +2089,7 @@ ${AR_KEYFRAMES}
     this.qs("#ir-key").dataset.manualEdit = "1";
     this.qs("#ir-type").value = d.device_type || "climate";
     this.qs("#ir-climate-style").value = d.climate_style === "relative" ? "relative" : "absolute";
+    this.qs("#ir-relative-modes").value = (d.relative_modes || []).join(", ");
     this._toggleClimateStyleField();
     this._renderPresetSelect(d.preset || "generic");
     this._typeHint();
@@ -2099,6 +2110,12 @@ ${AR_KEYFRAMES}
     const model = this.qs("#ir-model").value.trim() || name;
     const rawModels = this.qs("#ir-supported-models").value.split(",").map(s => s.trim()).filter(Boolean);
     const existing = this._data.store?.devices?.[key] || {};
+    const modeAliases = { fan: "fan_only" };
+    const validModes = new Set(["cool", "heat", "dry", "auto", "fan_only"]);
+    const relativeModes = (this.qs("#ir-relative-modes")?.value || "")
+      .split(",")
+      .map(s => modeAliases[s.trim().toLowerCase()] || s.trim().toLowerCase())
+      .filter(s => validModes.has(s));
     return {
       device_key: key,
       entry_id: this.qs("#ir-entry").value,
@@ -2106,6 +2123,7 @@ ${AR_KEYFRAMES}
       model, device_type: this.qs("#ir-type").value || "climate",
       preset: this._currentPresetId(),
       climate_style: this.qs("#ir-climate-style")?.value === "relative" ? "relative" : "absolute",
+      relative_modes: relativeModes,
       supported_models: rawModels.length ? rawModels : [model],
       commands: existing.commands || {},
     };
@@ -2990,6 +3008,15 @@ ${AR_KEYFRAMES}
   _toggleClimateStyleField() {
     const field = this.qs("#ir-climate-style-field");
     if (field) field.style.display = this.qs("#ir-type")?.value === "climate" ? "" : "none";
+    this._toggleRelativeModesField();
+  }
+
+  _toggleRelativeModesField() {
+    const field = this.qs("#ir-relative-modes-field");
+    if (!field) return;
+    const isClimate = this.qs("#ir-type")?.value === "climate";
+    const isRelative = this.qs("#ir-climate-style")?.value === "relative";
+    field.style.display = isClimate && isRelative ? "" : "none";
   }
 
   _allRecommended() {

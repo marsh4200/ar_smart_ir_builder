@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any
 
@@ -41,6 +42,32 @@ TEMP_PATTERNS = [
     re.compile(r"^(auto|cool|dry|fan_only|heat)_(\d{2})$"),
     re.compile(r"^(?:temp|temperature)_(\d{2})$"),
 ]
+
+# "Mode + Temp ±" remotes (climate_style == "relative") have a single Mode
+# button that cycles through HVAC modes on each press, rather than a discrete
+# button per mode. Not every remote cycles through the same modes — a plain
+# cool/heat unit only toggles between two — so the actual set and order is
+# configurable per profile (profile["relative_modes"], set in the builder
+# UI). This is the fallback used when a profile hasn't customised it.
+# There's no way to read the AC's actual state back from an IR blaster, so —
+# same as the fan "toggleMode" cycle detection in smartir_export.py — the
+# entity assumes the unit wakes up at the front of the list and counts
+# presses from there. If the AC's own memory disagrees with that assumption,
+# the tracked mode can drift from reality until it's re-synced (e.g. by
+# turning the AC off and back on through this entity).
+RELATIVE_MODE_ORDER: list[HVACMode] = [
+    HVACMode.COOL,
+    HVACMode.HEAT,
+    HVACMode.DRY,
+    HVACMode.AUTO,
+    HVACMode.FAN_ONLY,
+]
+# Same idea for a single Fan-speed button and a single Swing button.
+RELATIVE_FAN_ORDER = ["low", "medium", "high"]
+RELATIVE_SWING_MODES = ["on", "off"]
+# Gap between repeated presses of a cycling button, so the AC has time to
+# register each one distinctly.
+RELATIVE_PRESS_DELAY = 0.35
 
 
 async def async_setup_entry(
@@ -143,6 +170,11 @@ class ARSmartIRClimateEntity(ClimateEntity):
         self._attr_target_temperature = 24
         self._attr_fan_mode = None
         self._attr_swing_mode = None
+        # Assumed position in the physical remote's cycle for relative-style
+        # (Mode + Temp ±) profiles — see RELATIVE_MODE_ORDER above.
+        self._relative_mode_index = 0
+        self._relative_fan_index = 0
+        self._relative_swing_on = False
         self.update_profile(profile)
 
     @property
@@ -188,20 +220,44 @@ class ARSmartIRClimateEntity(ClimateEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {
+        attrs = {
             "device_key": self._device_key,
             "broadlink_device": self._profile.get("broadlink_device") or self._device_key,
             "entry_id": self._entry.entry_id,
             "profile_type": self._profile.get("device_type"),
             "stored_commands": sorted(self._profile.get("commands", {}).keys()),
         }
+        if self._is_relative():
+            # Surfaced for debugging cycle drift — see _relative_mode_order().
+            order = self._relative_mode_order()
+            attrs["relative_style"] = True
+            attrs["relative_mode_order"] = [m.value for m in order]
+            index = min(self._relative_mode_index, len(order) - 1)
+            attrs["assumed_mode"] = order[index].value
+            if self._uses_fan_toggle():
+                attrs["assumed_fan_mode"] = RELATIVE_FAN_ORDER[self._relative_fan_index]
+            if self._uses_swing_toggle():
+                attrs["assumed_swing_on"] = self._relative_swing_on
+        return attrs
 
     def update_profile(self, profile: dict[str, Any]) -> None:
         self._profile = profile
         self._attr_name = profile.get("name") or self._device_key
         self._attr_hvac_modes = self._available_hvac_modes()
-        self._attr_fan_modes = self._collect_prefixed_values("fan_")
-        self._attr_swing_modes = self._collect_prefixed_values("swing_")
+        if self._is_relative():
+            # The configured cycle order may have been edited shorter since
+            # the last update — keep the tracked position in range.
+            self._relative_mode_index = min(
+                self._relative_mode_index, len(self._relative_mode_order()) - 1
+            )
+        if self._uses_fan_toggle():
+            self._attr_fan_modes = RELATIVE_FAN_ORDER
+        else:
+            self._attr_fan_modes = self._collect_prefixed_values("fan_")
+        if self._uses_swing_toggle():
+            self._attr_swing_modes = RELATIVE_SWING_MODES
+        else:
+            self._attr_swing_modes = self._collect_prefixed_values("swing_")
         self._update_supported_features()
 
     async def async_turn_off(self) -> None:
@@ -210,6 +266,20 @@ class ARSmartIRClimateEntity(ClimateEntity):
         self.async_write_ha_state()
 
     async def async_turn_on(self) -> None:
+        if self._is_relative():
+            was_off = self.hvac_mode == HVACMode.OFF
+            target_mode = self.hvac_mode if self.hvac_mode != HVACMode.OFF else self._relative_mode_order()[0]
+            if was_off:
+                # The Mode button doesn't power the unit on by itself — that's
+                # a separate button. Assume the AC wakes up at the front of
+                # the cycle, then press through to the mode we actually want.
+                await self._send_power_on_code()
+                self._relative_mode_index = 0
+            await self._cycle_mode_to(target_mode)
+            self._attr_hvac_mode = target_mode
+            self.async_write_ha_state()
+            return
+
         target_mode = self.hvac_mode if self.hvac_mode != HVACMode.OFF else HVACMode.COOL
         code = self._find_code("on") or self._find_temperature_code(target_mode, self.target_temperature)
         if code is None:
@@ -224,6 +294,16 @@ class ARSmartIRClimateEntity(ClimateEntity):
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
         if hvac_mode == HVACMode.OFF:
             await self.async_turn_off()
+            return
+
+        if self._is_relative():
+            was_off = self.hvac_mode == HVACMode.OFF
+            if was_off:
+                await self._send_power_on_code()
+                self._relative_mode_index = 0
+            await self._cycle_mode_to(hvac_mode)
+            self._attr_hvac_mode = hvac_mode
+            self.async_write_ha_state()
             return
 
         code = self._find_temperature_code(hvac_mode, self.target_temperature) or self._find_code(
@@ -246,7 +326,21 @@ class ARSmartIRClimateEntity(ClimateEntity):
         temperature = int(round(temperature))
         hvac_mode = kwargs.get("hvac_mode", self.hvac_mode)
         if hvac_mode == HVACMode.OFF:
-            hvac_mode = HVACMode.COOL
+            hvac_mode = self._relative_mode_order()[0] if self._is_relative() else HVACMode.COOL
+
+        if self._uses_temp_step():
+            temperature = max(int(self.min_temp), min(int(self.max_temp), temperature))
+            current = int(round(self._attr_target_temperature or temperature))
+            delta = temperature - current
+            command_name = "temp_up" if delta > 0 else "temp_down"
+            if delta != 0 and self._find_code(command_name) is not None:
+                await self._press_n_times(command_name, abs(delta))
+            self._attr_target_temperature = temperature
+            if hvac_mode != self.hvac_mode:
+                await self.async_set_hvac_mode(hvac_mode)
+            else:
+                self.async_write_ha_state()
+            return
 
         code = self._find_temperature_code(hvac_mode, temperature)
         if code is None:
@@ -266,11 +360,32 @@ class ARSmartIRClimateEntity(ClimateEntity):
         self.async_write_ha_state()
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
+        if self._uses_fan_toggle():
+            if fan_mode not in RELATIVE_FAN_ORDER:
+                return
+            target_index = RELATIVE_FAN_ORDER.index(fan_mode)
+            steps = (target_index - self._relative_fan_index) % len(RELATIVE_FAN_ORDER)
+            if steps:
+                await self._press_n_times("fan_toggle", steps)
+            self._relative_fan_index = target_index
+            self._attr_fan_mode = fan_mode
+            self.async_write_ha_state()
+            return
+
         await self._send_profile_command(f"fan_{fan_mode}")
         self._attr_fan_mode = fan_mode
         self.async_write_ha_state()
 
     async def async_set_swing_mode(self, swing_mode: str) -> None:
+        if self._uses_swing_toggle():
+            desired_on = swing_mode == "on"
+            if desired_on != self._relative_swing_on:
+                await self._send_code("swing_toggle")
+                self._relative_swing_on = desired_on
+            self._attr_swing_mode = swing_mode
+            self.async_write_ha_state()
+            return
+
         await self._send_profile_command(f"swing_{swing_mode}")
         self._attr_swing_mode = swing_mode
         self.async_write_ha_state()
@@ -286,6 +401,8 @@ class ARSmartIRClimateEntity(ClimateEntity):
         self._attr_supported_features = features
 
     def _supports_temperature(self) -> bool:
+        if self._uses_temp_step():
+            return True
         for name in self._profile.get("commands", {}):
             if self._find_temperature_match(name) is not None:
                 return True
@@ -293,6 +410,11 @@ class ARSmartIRClimateEntity(ClimateEntity):
 
     def _available_hvac_modes(self) -> list[HVACMode]:
         modes = [HVACMode.OFF]
+
+        if self._is_relative():
+            modes.extend(self._relative_mode_order())
+            return modes
+
         command_names = set(self._profile.get("commands", {}))
         mode_map = {
             HVACMode.AUTO: "auto",
@@ -309,6 +431,75 @@ class ARSmartIRClimateEntity(ClimateEntity):
         if len(modes) == 1:
             modes.append(HVACMode.COOL)
         return modes
+
+    # --- relative-style (Mode + Temp ±) helpers --------------------------- #
+
+    def _commands(self) -> dict[str, Any]:
+        return self._profile.get("commands", {})
+
+    def _has_discrete_modes(self) -> bool:
+        commands = self._commands()
+        return any(
+            name in commands or any(n.startswith(f"{name}_") for n in commands)
+            for name in ("cool", "heat", "dry", "fan_only", "auto")
+        )
+
+    def _is_relative(self) -> bool:
+        if str(self._profile.get("climate_style", "")).lower() == "relative":
+            return True
+        # Fallback for profiles saved before climate_style existed.
+        return "mode_toggle" in self._commands() and not self._has_discrete_modes()
+
+    def _relative_mode_order(self) -> list[HVACMode]:
+        """This profile's Mode-button cycle, or the default if unset."""
+        modes: list[HVACMode] = []
+        for name in self._profile.get("relative_modes") or []:
+            try:
+                modes.append(HVACMode(name))
+            except ValueError:
+                continue
+        return modes or RELATIVE_MODE_ORDER
+
+    def _uses_fan_toggle(self) -> bool:
+        commands = self._commands()
+        return "fan_toggle" in commands and not any(
+            name.startswith("fan_") and name != "fan_toggle" for name in commands
+        )
+
+    def _uses_swing_toggle(self) -> bool:
+        commands = self._commands()
+        return "swing_toggle" in commands and not any(
+            name.startswith("swing_") and name != "swing_toggle" for name in commands
+        )
+
+    def _uses_temp_step(self) -> bool:
+        commands = self._commands()
+        return "temp_up" in commands or "temp_down" in commands
+
+    async def _press_n_times(self, command_name: str, times: int) -> None:
+        for i in range(max(0, times)):
+            await self._send_code(command_name)
+            if i < times - 1:
+                await asyncio.sleep(RELATIVE_PRESS_DELAY)
+
+    async def _send_power_on_code(self) -> bool:
+        """Best-effort power-on for a relative/toggle remote."""
+        for name in ("on", "power_toggle", "power"):
+            if self._find_code(name):
+                await self._send_code(name)
+                return True
+        return False
+
+    async def _cycle_mode_to(self, hvac_mode: HVACMode) -> None:
+        order = self._relative_mode_order()
+        if hvac_mode not in order:
+            return
+        target_index = order.index(hvac_mode)
+        current_index = min(self._relative_mode_index, len(order) - 1)
+        steps = (target_index - current_index) % len(order)
+        if steps:
+            await self._press_n_times("mode_toggle", steps)
+        self._relative_mode_index = target_index
 
     def _available_temperatures(self) -> list[int]:
         temperatures: set[int] = set()
@@ -329,8 +520,15 @@ class ARSmartIRClimateEntity(ClimateEntity):
     def _collect_prefixed_values(self, prefix: str) -> list[str]:
         values = []
         for name in sorted(self._profile.get("commands", {})):
-            if name.startswith(prefix):
-                values.append(name[len(prefix) :])
+            if not name.startswith(prefix):
+                continue
+            value = name[len(prefix) :]
+            if value == "toggle":
+                # e.g. "fan_toggle" / "swing_toggle" — a single cycling
+                # button, not a discrete mode named "toggle". Handled
+                # separately via _uses_fan_toggle / _uses_swing_toggle.
+                continue
+            values.append(value)
         return values
 
     def _find_temperature_code(self, hvac_mode: HVACMode, temperature: float | None) -> str | None:
