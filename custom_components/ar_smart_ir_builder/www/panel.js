@@ -97,6 +97,13 @@ const RECOMMENDED = {
     ["Position", ["up","down","preset_1","preset_2"]],
     ["Power", ["power","power_on","power_off"]],
   ],
+  // Button-only: on/off + a step-speed button, no fan entity. Learn exactly
+  // what's on the remote — a plain on/off toggle and a single speed-cycle
+  // button both work here just as well as discrete up/down buttons.
+  universal_fan: [
+    ["Power", ["on","off"]],
+    ["Speed", ["speed_up","speed_down"]],
+  ],
   fan: [
     ["Power", ["on","off"]],
     ["Speed", ["fan_low","fan_medium","fan_high"]],
@@ -156,12 +163,13 @@ const RECOMMENDED = {
 };
 
 const TYPE_LABELS = {
-  climate: "Climate", fan: "Fan", media_player: "Media player", tv: "TV",
+  climate: "Climate", fan: "Fan", universal_fan: "Universal fan (buttons)",
+  media_player: "Media player", tv: "TV",
   projector: "Projector", receiver: "AV receiver", soundbar: "Soundbar",
   decoder: "Decoder / set-top box", custom: "Custom",
 };
 const TYPE_ICONS = {
-  climate: "❄️", fan: "🌀", media_player: "📺", tv: "📺",
+  climate: "❄️", fan: "🌀", universal_fan: "🔘", media_player: "📺", tv: "📺",
   projector: "📽️", receiver: "🔊", soundbar: "🎚️", decoder: "📡", custom: "🛸",
 };
 
@@ -188,6 +196,7 @@ const COMMAND_HINTS = {
   temp_up:"Temperature up (single step)", temp_down:"Temperature down (single step)",
   fan_toggle:"Fan speed button — cycles speeds on each press",
   swing_toggle:"Swing button — toggles on each press",
+  speed_up:"Fan speed up (single step)", speed_down:"Fan speed down (single step)",
   temp_16:"Set 16°C", temp_18:"Set 18°C", temp_20:"Set 20°C", temp_22:"Set 22°C",
   temp_24:"Set 24°C", temp_26:"Set 26°C", temp_28:"Set 28°C", temp_30:"Set 30°C",
 
@@ -746,6 +755,16 @@ const REMOTE_LAYOUTS = {
       { cmd: "timer_1h", icon: "1h", label: "Timer 1h" },
       { cmd: "timer_2h", icon: "2h", label: "Timer 2h" },
       { cmd: "timer_4h", icon: "4h", label: "Timer 4h" },
+    ]},
+  ],
+  universal_fan: [
+    { type: "row", btns: [
+      { cmd: "on", icon: "⏻", label: "On", cls: "power" },
+      { cmd: "off", icon: "⏹", label: "Off" },
+    ]},
+    { type: "row", btns: [
+      { cmd: "speed_down", icon: "－", label: "Speed −" },
+      { cmd: "speed_up", icon: "＋", label: "Speed +" },
     ]},
   ],
 };
@@ -1469,7 +1488,7 @@ ${AR_KEYFRAMES}
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.11.2</div>
+      <div class="ir-version">v1.12.0</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -1570,6 +1589,7 @@ ${AR_KEYFRAMES}
               <optgroup label="Climate">
                 <option value="climate">Climate / air conditioner</option>
                 <option value="fan">Fan</option>
+                <option value="universal_fan">Universal fan (buttons only — On/Off + Speed ±)</option>
               </optgroup>
               <optgroup label="Audio / video">
                 <option value="tv">TV</option>
@@ -2901,6 +2921,7 @@ ${AR_KEYFRAMES}
       media_player: "Creates a media_player entity. Exports to codes/media_player.",
       climate: "Creates a climate entity. Exports to codes/climate.",
       fan: "Creates a fan entity. Exports to codes/fan.",
+      universal_fan: "Creates simple press-buttons (On, Off, Speed +, Speed −) instead of a fan entity — no state tracking, each press just sends the code once. Not exportable to SmartIR; use \"Export HA scripts\" if you need that.",
       custom: "Creates no entity and can't be exported as a codeset — use \"Export HA scripts\" and wrap them yourself.",
     };
     el.textContent = hints[type] || "";

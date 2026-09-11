@@ -44,17 +44,26 @@ TEMP_PATTERNS = [
 ]
 
 # "Mode + Temp ±" remotes (climate_style == "relative") have a single Mode
-# button that cycles through HVAC modes on each press, rather than a discrete
-# button per mode. Not every remote cycles through the same modes — a plain
-# cool/heat unit only toggles between two — so the actual set and order is
-# configurable per profile (profile["relative_modes"], set in the builder
+# button that steps to the next HVAC mode on each press, rather than a
+# discrete button per mode. There is only ever ONE learned code for it
+# (mode_toggle) — it is not addressable, it just advances one position, so
+# the entity never sends more than one press per interaction and never tries
+# to compute a multi-press "jump" to whatever mode was tapped in the UI.
+# Selecting a mode in Home Assistant presses Mode once and reports back
+# whichever mode that lands on; on a cycle longer than two, that may not be
+# the one you tapped — press again to keep stepping, exactly like the
+# physical remote. (For a plain two-mode cool/heat unit this is exactly a
+# toggle: either selection always lands on the other one.)
+#
+# Not every remote cycles through the same modes — the actual set and order
+# is configurable per profile (profile["relative_modes"], set in the builder
 # UI). This is the fallback used when a profile hasn't customised it.
-# There's no way to read the AC's actual state back from an IR blaster, so —
-# same as the fan "toggleMode" cycle detection in smartir_export.py — the
-# entity assumes the unit wakes up at the front of the list and counts
-# presses from there. If the AC's own memory disagrees with that assumption,
-# the tracked mode can drift from reality until it's re-synced (e.g. by
-# turning the AC off and back on through this entity).
+#
+# There's no way to read the AC's actual state back from an IR blaster, so
+# the entity tracks its own best-guess position in this list and advances it
+# by one on every press. If the AC's own memory disagrees with that guess —
+# someone used the physical remote, a power cut, etc. — the tracked mode can
+# drift from reality until it's re-synced by hand (tap through it again).
 RELATIVE_MODE_ORDER: list[HVACMode] = [
     HVACMode.COOL,
     HVACMode.HEAT,
@@ -267,16 +276,15 @@ class ARSmartIRClimateEntity(ClimateEntity):
 
     async def async_turn_on(self) -> None:
         if self._is_relative():
-            was_off = self.hvac_mode == HVACMode.OFF
-            target_mode = self.hvac_mode if self.hvac_mode != HVACMode.OFF else self._relative_mode_order()[0]
-            if was_off:
-                # The Mode button doesn't power the unit on by itself — that's
-                # a separate button. Assume the AC wakes up at the front of
-                # the cycle, then press through to the mode we actually want.
-                await self._send_power_on_code()
-                self._relative_mode_index = 0
-            await self._cycle_mode_to(target_mode)
-            self._attr_hvac_mode = target_mode
+            # The Mode button doesn't power the unit on by itself — that's a
+            # separate On/Power button — and it doesn't get pressed here: an
+            # AC's own memory typically resumes whatever mode it was last in,
+            # and this entity has no way to know better, so it just keeps
+            # reporting its last-known assumed mode rather than guessing.
+            await self._send_power_on_code()
+            order = self._relative_mode_order()
+            index = min(self._relative_mode_index, len(order) - 1) if order else 0
+            self._attr_hvac_mode = order[index] if order else HVACMode.COOL
             self.async_write_ha_state()
             return
 
@@ -297,12 +305,12 @@ class ARSmartIRClimateEntity(ClimateEntity):
             return
 
         if self._is_relative():
-            was_off = self.hvac_mode == HVACMode.OFF
-            if was_off:
+            if self.hvac_mode == HVACMode.OFF:
                 await self._send_power_on_code()
-                self._relative_mode_index = 0
-            await self._cycle_mode_to(hvac_mode)
-            self._attr_hvac_mode = hvac_mode
+            # The button only steps one position per press — see
+            # _cycle_mode_to for why this never tries to jump straight to
+            # `hvac_mode`.
+            await self._cycle_mode_to()
             self.async_write_ha_state()
             return
 
@@ -490,16 +498,25 @@ class ARSmartIRClimateEntity(ClimateEntity):
                 return True
         return False
 
-    async def _cycle_mode_to(self, hvac_mode: HVACMode) -> None:
+    async def _cycle_mode_to(self) -> None:
+        """Press Mode exactly once and report whichever mode that lands on.
+
+        The physical button can't be commanded to a specific mode — it only
+        ever steps forward one position — so this never sends more than one
+        press no matter what was requested. On a two-mode remote that's
+        already a true toggle: either selection always lands on the other
+        one. On a longer cycle, reaching a mode further away just takes
+        picking it again (each tap = one more physical press), the same as
+        working the real remote by hand.
+        """
         order = self._relative_mode_order()
-        if hvac_mode not in order:
+        if not order:
             return
-        target_index = order.index(hvac_mode)
-        current_index = min(self._relative_mode_index, len(order) - 1)
-        steps = (target_index - current_index) % len(order)
-        if steps:
-            await self._press_n_times("mode_toggle", steps)
-        self._relative_mode_index = target_index
+        await self._press_n_times("mode_toggle", 1)
+        index = min(self._relative_mode_index, len(order) - 1)
+        index = (index + 1) % len(order)
+        self._relative_mode_index = index
+        self._attr_hvac_mode = order[index]
 
     def _available_temperatures(self) -> list[int]:
         temperatures: set[int] = set()

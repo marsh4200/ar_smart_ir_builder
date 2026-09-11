@@ -4,7 +4,7 @@ import asyncio
 from typing import Any
 
 DOMAIN = "ar_smart_ir_builder"
-PLATFORMS: list[str] = ["climate", "fan", "media_player"]
+PLATFORMS: list[str] = ["climate", "fan", "media_player", "button"]
 PANEL_URL_PATH = "ar-smart-ir-builder"
 PANEL_TITLE = "AR Smart IR"
 PANEL_ICON = "mdi:remote-tv"
@@ -21,6 +21,7 @@ SIGNAL_DEVICES_UPDATED = f"{DOMAIN}_devices_updated"
 SUPPORTED_DEVICE_TYPES: list[str] = [
     "climate",
     "fan",
+    "universal_fan",
     "media_player",
     "tv",
     "projector",
@@ -35,6 +36,9 @@ SUPPORTED_DEVICE_TYPES: list[str] = [
 # "custom" is a free-form profile (blinds, screens, gates, projectors, ...).
 # It creates no HA entity and cannot be exported as an ar_smart_ir codeset —
 # use "Export HA scripts" for these and wrap the scripts in e.g. a template cover.
+# "universal_fan" is deliberately button-only (see button.py): on/off + a
+# speed step button, no stateful fan entity, no assumptions about how many
+# speeds exist or what state the fan is in.
 
 # --- Controller types -------------------------------------------------
 # A config entry talks to exactly one physical IR blaster, via one of these
