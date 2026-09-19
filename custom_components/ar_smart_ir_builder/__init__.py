@@ -338,7 +338,7 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
                     "name": "ar-smart-ir-panel",
                     "embed_iframe": False,
                     "trust_external_script": True,
-                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=48",
+                    "js_url": f"/api/{DOMAIN}/static/panel.js?v=49",
                 }
             },
             require_admin=True,
@@ -431,7 +431,12 @@ def _async_register_services(hass: HomeAssistant) -> None:
         if "alternative" in call.data:
             learn_data["alternative"] = call.data["alternative"]
 
-        before_codes = await get_stored_codes(hass)
+        bl_device = learn_data["device"]
+        bl_command = learn_data["command"]
+
+        # Clear any previous capture under this exact name first, so whatever
+        # is stored under it afterwards can only be the button just pressed.
+        await _async_forget_broadlink_command(hass, remote, bl_device, bl_command)
 
         try:
             await hass.services.async_call(
@@ -456,7 +461,12 @@ def _async_register_services(hass: HomeAssistant) -> None:
                 f"Broadlink learn failed: {err}.{hint}"
             ) from err
 
-        code = await get_last_code(hass, before_codes=before_codes)
+        # Read back the code stored under THIS device + command name. (The old
+        # approach took "any new code in any Broadlink file" — Broadlink only
+        # writes that file ~15s after a learn, so learning quickly one after
+        # another shuffled codes onto the wrong names: cool_16 ended up
+        # holding the dry_16 signal, etc.)
+        code = await _async_wait_broadlink_code(hass, remote, bl_device, bl_command)
         if code is None:
             hint = (
                 "RF capture is two steps: press and HOLD the button until the "
@@ -813,10 +823,144 @@ def _async_register_services(hass: HomeAssistant) -> None:
         DOMAIN, "test_command", test_command,
         schema=TEST_SCHEMA, supports_response=SupportsResponse.OPTIONAL,
     )
+    async def resync_codes(call: ServiceCall) -> dict[str, Any]:
+        """Re-pull every command's code from Broadlink storage by exact name.
+
+        Repairs profiles learned before 1.14.3, where codes could land on the
+        wrong command name. Broadlink itself always stored each capture under
+        the right name, so this makes the profile match it again.
+        """
+        store: ARSmartIRStore = hass.data[DOMAIN][DATA_STORE]
+        device_key = call.data["device_key"]
+        device = store.get_device(device_key)
+        if device is None:
+            raise HomeAssistantError(f"Profile '{device_key}' not found.")
+        entry_id = call.data.get("entry_id") or device.get("entry_id")
+        entry = await _async_get_entry(hass, entry_id)
+        if resolve_controller_type(entry) == CONTROLLER_TASMOTA_MQTT:
+            raise HomeAssistantError("Re-sync only applies to Broadlink profiles.")
+        remote = entry.data.get(CONF_REMOTE_ENTITY)
+        bl_device = device.get("broadlink_device") or device_key
+
+        updated: list[str] = []
+        missing: list[str] = []
+        unchanged = 0
+        commands = device.setdefault("commands", {})
+        for name in list(commands):
+            code = await _async_lookup_broadlink_code(hass, remote, bl_device, name)
+            if not code:
+                missing.append(name)
+            elif code != commands[name]:
+                commands[name] = code
+                updated.append(name)
+            else:
+                unchanged += 1
+
+        if updated:
+            await store.upsert_device(entry, device_key, device)
+            await store.async_save()
+            async_dispatcher_send(hass, SIGNAL_DEVICES_UPDATED)
+        return {"updated": updated, "unchanged": unchanged, "missing": missing}
+
+    hass.services.async_register(
+        DOMAIN, "resync_codes", resync_codes,
+        schema=DELETE_SCHEMA, supports_response=SupportsResponse.OPTIONAL,
+    )
     hass.services.async_register(DOMAIN, "delete_device", delete_device, schema=DELETE_SCHEMA)
     hass.services.async_register(
         DOMAIN, "delete_command", delete_command, schema=DELETE_COMMAND_SCHEMA
     )
+
+
+# --------------------------------------------------------------------------- #
+# Broadlink code lookup by exact device + command name
+# --------------------------------------------------------------------------- #
+def _first_code(value: Any) -> str | None:
+    """Broadlink stores a code as a string, or a list for toggle commands."""
+    if isinstance(value, str) and value:
+        return value
+    if isinstance(value, list):
+        for item in value:
+            if isinstance(item, str) and item:
+                return item
+    return None
+
+
+def _broadlink_memory_codes(hass: HomeAssistant, remote_entity: str) -> dict | None:
+    """The Broadlink remote entity's live in-memory code table, if reachable.
+
+    This is updated the instant learn_command finishes, unlike the .storage
+    file which Broadlink only flushes after a delay.
+    """
+    try:
+        component = hass.data.get("entity_components", {}).get("remote")
+        entity = component.get_entity(remote_entity) if component else None
+        codes = getattr(entity, "_codes", None)
+        return codes if isinstance(codes, dict) else None
+    except Exception:  # noqa: BLE001 — private API, best effort
+        return None
+
+
+async def _broadlink_disk_codes(hass: HomeAssistant) -> dict[str, dict[str, Any]]:
+    def read() -> dict[str, dict[str, Any]]:
+        merged: dict[str, dict[str, Any]] = {}
+        storage_path = Path(hass.config.path(".storage"))
+        for file in storage_path.glob("broadlink_remote_*_codes"):
+            try:
+                data = json.loads(file.read_text()).get("data", {})
+            except Exception:  # noqa: BLE001
+                continue
+            if isinstance(data, dict):
+                for dev, cmds in data.items():
+                    if isinstance(cmds, dict):
+                        merged.setdefault(dev, {}).update(cmds)
+        return merged
+
+    return await asyncio.to_thread(read)
+
+
+async def _async_lookup_broadlink_code(
+    hass: HomeAssistant, remote_entity: str, device: str, command: str
+) -> str | None:
+    mem = _broadlink_memory_codes(hass, remote_entity)
+    if mem is not None:
+        code = _first_code((mem.get(device) or {}).get(command))
+        if code:
+            return code
+    disk = await _broadlink_disk_codes(hass)
+    return _first_code((disk.get(device) or {}).get(command))
+
+
+async def _async_forget_broadlink_command(
+    hass: HomeAssistant, remote_entity: str, device: str, command: str
+) -> None:
+    try:
+        await hass.services.async_call(
+            "remote",
+            "delete_command",
+            {"device": device, "command": [command]},
+            target={"entity_id": remote_entity},
+            blocking=True,
+        )
+    except Exception:  # noqa: BLE001 — "not found" is the normal case
+        pass
+    mem = _broadlink_memory_codes(hass, remote_entity)
+    if mem is not None and isinstance(mem.get(device), dict):
+        mem[device].pop(command, None)
+
+
+async def _async_wait_broadlink_code(
+    hass: HomeAssistant, remote_entity: str, device: str, command: str,
+    timeout: float = 25.0,
+) -> str | None:
+    deadline = asyncio.get_running_loop().time() + timeout
+    while True:
+        code = await _async_lookup_broadlink_code(hass, remote_entity, device, command)
+        if code:
+            return code
+        if asyncio.get_running_loop().time() >= deadline:
+            return None
+        await asyncio.sleep(1)
 
 
 def _classify_broadlink_code(code: str) -> str:

@@ -79,6 +79,18 @@
     "test_command": {
       "name": "Test command",
       "description": "Fire a single learned command immediately via the entry's controller (Broadlink remote or Tasmota MQTT)."
+    },
+    "resync_codes": {
+      "name": "Re-sync codes from Broadlink",
+      "description": "Re-read every command's code from Broadlink storage by its exact name and fix any that were saved under the wrong name.",
+      "fields": {
+        "device_key": {
+          "name": "Device key"
+        },
+        "entry_id": {
+          "name": "Entry"
+        }
+      }
     }
   }
 }

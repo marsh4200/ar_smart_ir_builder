@@ -5,7 +5,7 @@
 // the OS reduced-motion setting with no way to say otherwise).
 
 const MOTION_PREF_KEY = "ar_smart_ir_builder.motion";
-const PANEL_BUILD = "2.13.2";
+const PANEL_BUILD = "2.13.3";
 const AR_KEYFRAMES = `
 @keyframes ir-spin { to { transform: rotate(360deg); } }
 @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -1668,7 +1668,7 @@ ${AR_KEYFRAMES}
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.14.2</div>
+      <div class="ir-version">v1.14.3</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -1999,6 +1999,11 @@ ${AR_KEYFRAMES}
         <div class="ir-card-desc" style="margin-bottom:12px">Test any stored command, including custom ones not on the remote layout.</div>
         <div id="ir-all-commands-list" style="display:grid;gap:6px;max-height:420px;overflow-y:auto"></div>
 
+        <button class="ir-btn ir-btn-secondary" id="ir-resync" type="button" style="margin-top:14px;width:100%"
+          title="Fixes commands that fire the wrong signal (e.g. cool 16 sends dry 16) by re-reading each code from Broadlink under its exact name">
+          ⟲ Re-sync codes from Broadlink
+        </button>
+
         <div class="ir-actions" style="margin-top:20px">
           <button class="ir-btn ir-btn-secondary" id="ir-back-to-3">← Learn more</button>
           <button class="ir-btn ir-btn-ghost" id="ir-to-export">Export →</button>
@@ -2132,6 +2137,7 @@ ${AR_KEYFRAMES}
 
     // Step 4
     this.qs("#ir-back-to-3").onclick = () => this._setStep(3);
+    this.qs("#ir-resync").onclick = () => this._resyncCodes();
     this.qs("#ir-to-export").onclick = () => this._setStep(5);
 
     // Step 5
@@ -2853,6 +2859,39 @@ ${AR_KEYFRAMES}
       btn.onclick = () => this._testCommandDirect(cmd, btn);
     }
     return btn;
+  }
+
+  /** Re-pull every code from Broadlink storage by exact command name. */
+  async _resyncCodes() {
+    const key = this._currentKey;
+    if (!key) { this._showCallout("Open a profile first.", "error"); return; }
+    const strip = this.qs("#ir-test-strip");
+    const btn = this.qs("#ir-resync");
+    btn.disabled = true;
+    btn.textContent = "Re-syncing…";
+    try {
+      const res = await this._hass.callService(
+        "ar_smart_ir_builder", "resync_codes",
+        { device_key: key, entry_id: this.qs("#ir-entry").value || undefined },
+        undefined, false, true
+      );
+      const r = res?.response || {};
+      await this._load();
+      this._refreshDerivedUI();
+      const fixed = (r.updated || []).length;
+      const missing = (r.missing || []).length;
+      let msg = fixed
+        ? `✓ Fixed ${fixed} command${fixed === 1 ? "" : "s"} that held the wrong code: ${(r.updated || []).join(", ")}`
+        : `✓ All ${r.unchanged || 0} codes already match Broadlink — nothing to fix.`;
+      if (missing) msg += ` · ${missing} not found in Broadlink storage (re-learn those): ${(r.missing || []).join(", ")}`;
+      if (strip) { strip.className = "ir-test-strip ok"; strip.textContent = msg; }
+    } catch (err) {
+      const msg = err?.body?.message || err?.message || "Re-sync failed";
+      if (strip) { strip.className = "ir-test-strip err"; strip.textContent = `✗ ${msg}`; }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "⟲ Re-sync codes from Broadlink";
+    }
   }
 
   _renderAllCommandsList(commands) {
