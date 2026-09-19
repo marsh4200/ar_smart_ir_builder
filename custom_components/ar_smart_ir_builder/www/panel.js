@@ -5,7 +5,7 @@
 // the OS reduced-motion setting with no way to say otherwise).
 
 const MOTION_PREF_KEY = "ar_smart_ir_builder.motion";
-const PANEL_BUILD = "2.13.1";
+const PANEL_BUILD = "2.13.2";
 const AR_KEYFRAMES = `
 @keyframes ir-spin { to { transform: rotate(360deg); } }
 @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -1668,7 +1668,7 @@ ${AR_KEYFRAMES}
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.14.1</div>
+      <div class="ir-version">v1.14.2</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>

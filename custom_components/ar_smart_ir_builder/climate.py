@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from typing import Any
 
@@ -36,6 +37,12 @@ async def _async_remove_entity(hass: HomeAssistant, entity) -> None:
 
 from .const import DATA_STORE, DOMAIN, SIGNAL_DEVICES_UPDATED, resolve_controller_available, send_with_policy
 from .storage import ARSmartIRStore, normalize_device
+
+_LOGGER = logging.getLogger(__name__)
+# Shown on the entity as `builder_version` so it's obvious from Developer
+# Tools whether Home Assistant was actually restarted onto this code.
+BUILDER_VERSION = "1.14.2"
+MODE_TEMP_RE = re.compile(r"^(auto|cool|dry|fan_only|heat)_(\d{2})$")
 
 CLIMATE_DEVICE_TYPES = {"climate", "ac", "aircon", "air_conditioner"}
 TEMP_PATTERNS = [
@@ -239,6 +246,10 @@ class ARSmartIRClimateEntity(ClimateEntity):
             "entry_id": self._entry.entry_id,
             "profile_type": self._profile.get("device_type"),
             "stored_commands": sorted(self._profile.get("commands", {}).keys()),
+            "builder_version": BUILDER_VERSION,
+            "control_style": "relative" if self._is_relative() else "per_mode_codes",
+            "temperature_codes": self._temperature_codes_by_mode(),
+            "last_sent": getattr(self, "_last_sent", None),
         }
         if self._is_relative():
             # Surfaced for debugging cycle drift — see _relative_mode_order().
@@ -353,7 +364,7 @@ class ARSmartIRClimateEntity(ClimateEntity):
         # of what the AC was doing before. Temp +/- stepping is only the
         # fallback for temps that weren't learned (or for relative remotes).
         direct = self._find_temperature_command_name(hvac_mode, temperature)
-        if direct is not None and not self._is_relative():
+        if direct is not None:
             await self._send_code(direct)
             self._attr_target_temperature = temperature
             self._attr_hvac_mode = hvac_mode
@@ -476,7 +487,17 @@ class ARSmartIRClimateEntity(ClimateEntity):
             for name in ("cool", "heat", "dry", "fan_only", "auto")
         )
 
+    def _has_mode_temp_codes(self) -> bool:
+        """True once any full-state <mode>_<temp> code (cool_18, heat_22) is learned."""
+        return any(MODE_TEMP_RE.match(name) for name in self._commands())
+
     def _is_relative(self) -> bool:
+        # Learned per-mode temperature codes are full-state codes — each one
+        # sets mode AND temp in a single blast — so they always win over the
+        # Mode-cycle / Temp +/- stepping, even if the profile was saved as
+        # "Mode + Temp ±". Otherwise every cool_XX / heat_XX would be ignored.
+        if self._has_mode_temp_codes():
+            return False
         if str(self._profile.get("climate_style", "")).lower() == "relative":
             return True
         # Fallback for profiles saved before climate_style existed.
@@ -565,6 +586,17 @@ class ARSmartIRClimateEntity(ClimateEntity):
                 mode_temps.add(match)
         return sorted(mode_temps or all_temps)
 
+    def _temperature_codes_by_mode(self) -> dict[str, str]:
+        """e.g. {"cool": "16-30 (15)", "heat": "16-30 (15)"} for diagnostics."""
+        by_mode: dict[str, list[int]] = {}
+        for name in self._commands():
+            m = MODE_TEMP_RE.match(name)
+            if m:
+                by_mode.setdefault(m.group(1), []).append(int(m.group(2)))
+        return {
+            mode: f"{min(t)}-{max(t)} ({len(t)})" for mode, t in sorted(by_mode.items())
+        }
+
     def _nearest_mode_temperature(
         self, hvac_mode: HVACMode, temperature: float | None
     ) -> int | None:
@@ -646,7 +678,10 @@ class ARSmartIRClimateEntity(ClimateEntity):
     async def _send_code(self, command_name: str) -> None:
         code = self._find_code(command_name)
         if not code:
+            _LOGGER.warning("%s: no learned code for '%s'", self.entity_id, command_name)
             return
+        _LOGGER.debug("%s: sending '%s'", self.entity_id, command_name)
+        self._last_sent = command_name
         await send_with_policy(
             self.hass,
             self._entry,
