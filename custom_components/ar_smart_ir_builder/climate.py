@@ -79,6 +79,10 @@ RELATIVE_SWING_MODES = ["on", "off"]
 RELATIVE_PRESS_DELAY = 0.35
 
 
+def _is_fan_only_name(name: str) -> bool:
+    return name == "fan_only" or name.startswith("fan_only_")
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
@@ -219,12 +223,12 @@ class ARSmartIRClimateEntity(ClimateEntity):
 
     @property
     def min_temp(self) -> float:
-        temperatures = self._available_temperatures()
+        temperatures = self._available_temperatures(self.hvac_mode)
         return float(min(temperatures)) if temperatures else 16
 
     @property
     def max_temp(self) -> float:
-        temperatures = self._available_temperatures()
+        temperatures = self._available_temperatures(self.hvac_mode)
         return float(max(temperatures)) if temperatures else 30
 
     @property
@@ -314,15 +318,23 @@ class ARSmartIRClimateEntity(ClimateEntity):
             self.async_write_ha_state()
             return
 
-        code = self._find_temperature_code(hvac_mode, self.target_temperature) or self._find_code(
-            hvac_mode.value
-        )
-        if code is None:
+        # Each mode has its own set of temperature codes (cool_16..cool_30,
+        # heat_16..heat_30, ...). Prefer the exact temp in the new mode; if
+        # that one wasn't learned, snap to the nearest temp that was for this
+        # mode; only then fall back to a bare mode code.
+        command_name = self._find_temperature_command_name(hvac_mode, self.target_temperature)
+        if command_name is None:
+            nearest = self._nearest_mode_temperature(hvac_mode, self.target_temperature)
+            if nearest is not None:
+                command_name = self._find_temperature_command_name(hvac_mode, nearest)
+                if command_name is not None:
+                    self._attr_target_temperature = nearest
+        if command_name is None and self._find_code(hvac_mode.value) is not None:
+            command_name = hvac_mode.value
+        if command_name is None:
             return
 
-        await self._send_code(
-            self._find_temperature_command_name(hvac_mode, self.target_temperature) or hvac_mode.value
-        )
+        await self._send_code(command_name)
         self._attr_hvac_mode = hvac_mode
         self.async_write_ha_state()
 
@@ -335,6 +347,18 @@ class ARSmartIRClimateEntity(ClimateEntity):
         hvac_mode = kwargs.get("hvac_mode", self.hvac_mode)
         if hvac_mode == HVACMode.OFF:
             hvac_mode = self._relative_mode_order()[0] if self._is_relative() else HVACMode.COOL
+
+        # A learned code for exactly this mode + temperature always wins —
+        # it's a full-state code, so it lands on the right value regardless
+        # of what the AC was doing before. Temp +/- stepping is only the
+        # fallback for temps that weren't learned (or for relative remotes).
+        direct = self._find_temperature_command_name(hvac_mode, temperature)
+        if direct is not None and not self._is_relative():
+            await self._send_code(direct)
+            self._attr_target_temperature = temperature
+            self._attr_hvac_mode = hvac_mode
+            self.async_write_ha_state()
+            return
 
         if self._uses_temp_step():
             temperature = max(int(self.min_temp), min(int(self.max_temp), temperature))
@@ -471,7 +495,8 @@ class ARSmartIRClimateEntity(ClimateEntity):
     def _uses_fan_toggle(self) -> bool:
         commands = self._commands()
         return "fan_toggle" in commands and not any(
-            name.startswith("fan_") and name != "fan_toggle" for name in commands
+            name.startswith("fan_") and name != "fan_toggle" and not _is_fan_only_name(name)
+            for name in commands
         )
 
     def _uses_swing_toggle(self) -> bool:
@@ -518,13 +543,36 @@ class ARSmartIRClimateEntity(ClimateEntity):
         self._relative_mode_index = index
         self._attr_hvac_mode = order[index]
 
-    def _available_temperatures(self) -> list[int]:
-        temperatures: set[int] = set()
+    def _available_temperatures(self, hvac_mode: HVACMode | None = None) -> list[int]:
+        """Learned temperatures — for one mode if it has its own set.
+
+        Each mode can carry its own range (cool_16..cool_30 vs heat_16..
+        heat_30), so the slider range follows the current mode. Generic
+        temp_NN codes count for every mode. Falls back to all modes combined
+        when the current mode has no per-temperature codes.
+        """
+        all_temps: set[int] = set()
+        mode_temps: set[int] = set()
+        mode_value = hvac_mode.value if isinstance(hvac_mode, HVACMode) else None
         for name in self._profile.get("commands", {}):
             match = self._find_temperature_match(name)
-            if match is not None:
-                temperatures.add(match)
-        return sorted(temperatures)
+            if match is None:
+                continue
+            all_temps.add(match)
+            if mode_value and (
+                name.startswith(f"{mode_value}_") or not TEMP_PATTERNS[0].match(name)
+            ):
+                mode_temps.add(match)
+        return sorted(mode_temps or all_temps)
+
+    def _nearest_mode_temperature(
+        self, hvac_mode: HVACMode, temperature: float | None
+    ) -> int | None:
+        temps = self._available_temperatures(hvac_mode)
+        if not temps:
+            return None
+        target = temperature if temperature is not None else 24
+        return min(temps, key=lambda t: (abs(t - target), t))
 
     def _find_temperature_match(self, command_name: str) -> int | None:
         for pattern in TEMP_PATTERNS:
@@ -538,6 +586,10 @@ class ARSmartIRClimateEntity(ClimateEntity):
         values = []
         for name in sorted(self._profile.get("commands", {})):
             if not name.startswith(prefix):
+                continue
+            if _is_fan_only_name(name):
+                # "fan_only" / "fan_only_24" are an HVAC mode and its temp
+                # codes, not a fan speed called "only".
                 continue
             value = name[len(prefix) :]
             if value == "toggle":

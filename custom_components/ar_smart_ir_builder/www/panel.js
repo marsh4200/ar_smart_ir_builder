@@ -5,7 +5,7 @@
 // the OS reduced-motion setting with no way to say otherwise).
 
 const MOTION_PREF_KEY = "ar_smart_ir_builder.motion";
-const PANEL_BUILD = "2.12.0";
+const PANEL_BUILD = "2.13.0";
 const AR_KEYFRAMES = `
 @keyframes ir-spin { to { transform: rotate(360deg); } }
 @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -76,10 +76,34 @@ const AR_KEYFRAMES = `
 `;
 
 
+// Discrete-style ACs send a full-state code per mode *and* temperature, so
+// cool 18°C and heat 18°C are different codes. Each mode gets its own
+// 16–30°C set, named <mode>_<temp> (cool_18, heat_22, fan_only_24, ...) —
+// the exact names climate.py and the SmartIR export already look up.
+const CLIMATE_TEMP_MODES = [
+  { mode: "cool", label: "Cool", icon: "❄" },
+  { mode: "heat", label: "Heat", icon: "♨" },
+  { mode: "dry", label: "Dry", icon: "💧" },
+  { mode: "auto", label: "Auto", icon: "⟳" },
+  { mode: "fan_only", label: "Fan", icon: "🌀" },
+];
+const CLIMATE_TEMP_MIN = 16;
+const CLIMATE_TEMP_MAX = 30;
+const CLIMATE_TEMPS = Array.from(
+  { length: CLIMATE_TEMP_MAX - CLIMATE_TEMP_MIN + 1 }, (_, i) => CLIMATE_TEMP_MIN + i
+);
+const climateTempCmd = (mode, t) => `${mode}_${t}`;
+const CLIMATE_TEMP_CMD_RE = /^(cool|heat|dry|auto|fan_only)_(\d{2})$/;
+
 const RECOMMENDED = {
   climate: [
     ["Modes", ["off", "cool", "heat", "dry", "auto", "fan_only"]],
-    ["Temperature", ["temp_16","temp_18","temp_20","temp_22","temp_24","temp_26","temp_28","temp_30"]],
+    // One group per mode; the third element marks it as a per-mode
+    // temperature set so the learn step can show it as a tab, not a wall.
+    ...CLIMATE_TEMP_MODES.map(({ mode, label }) => [
+      `${label} temperatures`, CLIMATE_TEMPS.map(t => climateTempCmd(mode, t)), { tempMode: mode },
+    ]),
+    ["Temperature step", ["temp_up","temp_down"]],
     ["Fan speed", ["fan_low","fan_medium","fan_high","fan_auto"]],
     ["Swing", ["swing_on","swing_off"]],
   ],
@@ -420,6 +444,15 @@ const PRESETS = {
   ],
 };
 
+// Hints for every per-mode temperature code, plus the legacy mode-agnostic
+// temp_NN names (still honoured by climate.py for older profiles).
+CLIMATE_TEMPS.forEach(t => {
+  CLIMATE_TEMP_MODES.forEach(({ mode, label }) => {
+    COMMAND_HINTS[climateTempCmd(mode, t)] = `${label} mode at ${t}°C`;
+  });
+  if (!COMMAND_HINTS[`temp_${t}`]) COMMAND_HINTS[`temp_${t}`] = `Set ${t}°C (any mode)`;
+});
+
 const PRESET_EXTRA_HINTS = {
   resync: "Re-sync / auto adjust",
   help: "Help",
@@ -699,16 +732,11 @@ const REMOTE_LAYOUTS = {
       { cmd: "dry", icon: "💧", label: "Dry" },
       { cmd: "fan_only", icon: "🌀", label: "Fan" },
     ]},
+    // Mode tabs + a 16–30°C grid for the selected mode (see _renderClimateTemps).
+    { type: "climate_temps" },
     { type: "row", btns: [
-      { cmd: "temp_18", icon: "18°", label: "18°C" },
-      { cmd: "temp_20", icon: "20°", label: "20°C" },
-      { cmd: "temp_22", icon: "22°", label: "22°C" },
-      { cmd: "temp_24", icon: "24°", label: "24°C" },
-    ]},
-    { type: "row", btns: [
-      { cmd: "temp_26", icon: "26°", label: "26°C" },
-      { cmd: "temp_28", icon: "28°", label: "28°C" },
-      { cmd: "temp_30", icon: "30°", label: "30°C" },
+      { cmd: "temp_down", icon: "－", label: "Temp −" },
+      { cmd: "temp_up", icon: "＋", label: "Temp +" },
     ]},
     { type: "row", btns: [
       { cmd: "fan_low", icon: "〜", label: "Low" },
@@ -1142,6 +1170,27 @@ ${AR_KEYFRAMES}
     background: rgba(26,153,107,.14); border-color: rgba(26,153,107,.4); color: #0f6e56;
     box-shadow: 0 1px 8px -3px rgba(26,153,107,.5);
   }
+
+  /* Per-mode temperature tabs + grid */
+  .ir-tmode-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .ir-tmode-tab {
+    padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+    border: 1px solid var(--ir-border-strong); background: var(--ir-surface-2);
+    color: var(--primary-text-color); cursor: pointer;
+    transition: background .12s, border-color .12s, transform .1s;
+  }
+  .ir-tmode-tab:hover { transform: translateY(-1px); }
+  .ir-tmode-tab.active {
+    background: var(--primary-color); border-color: var(--primary-color); color: var(--text-primary-color, #fff);
+  }
+  .ir-tmode-tab .ir-tmode-count { font-weight: 600; opacity: .75; margin-left: 5px; font-size: 11px; }
+  .ir-tmode-tab.complete:not(.active) { border-color: rgba(26,153,107,.5); }
+  .ir-temp-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; }
+  .ir-temp-grid .ir-pill { padding: 7px 4px; text-align: center; }
+  .ir-remote-temps { margin: 4px 0 12px; }
+  .ir-remote-temps .ir-tmode-tabs { justify-content: center; }
+  .ir-remote-temps .ir-temp-grid { gap: 6px; }
+  .ir-remote-temps .ir-rbtn { min-width: 0; min-height: 40px; padding: 6px 2px; font-size: 14px; }
 
   /* Learn row */
   .ir-cmd-row { display: flex; gap: 8px; align-items: flex-end; }
@@ -1611,7 +1660,7 @@ ${AR_KEYFRAMES}
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.13.0</div>
+      <div class="ir-version">v1.14.0</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -2181,7 +2230,10 @@ ${AR_KEYFRAMES}
       const icon = TYPE_ICONS[d.device_type] || "📡";
       const cmdCount = Object.keys(d.commands || {}).length;
       const recType = this._effectiveType(d.device_type, d.climate_style);
-      const rec = (RECOMMENDED[recType] || RECOMMENDED.climate).flatMap(([, c]) => c);
+      const activeTemps = this._activeTempModes(new Set(Object.keys(d.commands || {})));
+      const rec = (RECOMMENDED[recType] || RECOMMENDED.climate)
+        .filter(([, , meta]) => !meta?.tempMode || activeTemps.has(meta.tempMode))
+        .flatMap(([, c]) => c);
       const covered = rec.filter(c => d.commands?.[c]).length;
       const pct = rec.length ? Math.round(covered / rec.length * 100) : 0;
 
@@ -2319,7 +2371,7 @@ ${AR_KEYFRAMES}
       );
       this._setLearning(false);
       await this._load();
-      this.qs("#ir-cmd").value = "";
+      this.qs("#ir-cmd").value = this._nextTempCommand(cmdName);
       this._justLearned = cmdName;
       this._renderPills();
       const dup = res?.response?.duplicate_of;
@@ -2763,6 +2815,12 @@ ${AR_KEYFRAMES}
           dpad.appendChild(btn);
         });
         body.appendChild(dpad);
+      } else if (section.type === "climate_temps") {
+        body.appendChild(this._renderClimateTemps(
+          new Set(Object.keys(commands)),
+          (def) => this._makeRemoteBtn(def, commands),
+          () => this._renderTestRemote(),
+        ));
       } else {
         const row = document.createElement("div");
         row.className = "ir-remote-row";
@@ -3100,6 +3158,12 @@ ${AR_KEYFRAMES}
             { cmd: "down", icon: "▼", cls: "down" },
           ].forEach(d => dpad.appendChild(this._makePreviewBtn(d, learned, d.cls)));
           body.appendChild(dpad);
+        } else if (section.type === "climate_temps") {
+          body.appendChild(this._renderClimateTemps(
+            learned,
+            (def) => this._makePreviewBtn(def, learned),
+            () => this._renderPreviewRemote(),
+          ));
         } else {
           const row = document.createElement("div");
           row.className = "ir-remote-row";
@@ -3164,7 +3228,66 @@ ${AR_KEYFRAMES}
   }
 
   _allRecommended() {
-    return this._recommendedGroups().flatMap(([, cmds]) => cmds);
+    const active = this._activeTempModes();
+    return this._recommendedGroups()
+      .filter(([, , meta]) => !meta?.tempMode || active.has(meta.tempMode))
+      .flatMap(([, cmds]) => cmds);
+  }
+
+  /**
+   * Which modes' temperature sets count toward coverage/checklist. Cool is
+   * always expected; any other mode joins once you've learned its mode code
+   * or any of its temperatures — so a cool-only unit isn't stuck at 25%
+   * because of 60 heat/dry/auto/fan codes it doesn't have.
+   */
+  _activeTempModes(learnedSet) {
+    const learned = learnedSet || new Set(this._currentCommands());
+    const active = new Set(["cool"]);
+    CLIMATE_TEMP_MODES.forEach(({ mode }) => {
+      if (learned.has(mode) || CLIMATE_TEMPS.some(t => learned.has(climateTempCmd(mode, t)))) {
+        active.add(mode);
+      }
+    });
+    return active;
+  }
+
+  /**
+   * Mode tabs + 16–30°C grid for the currently selected mode. Shared by the
+   * learn-step pills, the step-2 preview and the step-4 test remote; the
+   * caller supplies how each temperature button is built. Legacy temp_NN
+   * codes stand in on the remote when a mode has no code of its own.
+   */
+  _renderClimateTemps(learned, makeBtn, rerender, { pills = false } = {}) {
+    const current = this._tempMode || "cool";
+    const wrap = document.createElement("div");
+    wrap.className = pills ? "ir-temps-learn" : "ir-remote-temps";
+
+    const tabs = document.createElement("div");
+    tabs.className = "ir-tmode-tabs";
+    CLIMATE_TEMP_MODES.forEach(({ mode, label, icon }) => {
+      const have = CLIMATE_TEMPS.filter(t => learned.has(climateTempCmd(mode, t))).length;
+      const tab = document.createElement("button");
+      tab.type = "button";
+      tab.className = "ir-tmode-tab" + (mode === current ? " active" : "")
+        + (have === CLIMATE_TEMPS.length ? " complete" : "");
+      tab.innerHTML = `${icon} ${label}<span class="ir-tmode-count">${have}/${CLIMATE_TEMPS.length}</span>`;
+      tab.title = `${label} temperatures ${CLIMATE_TEMP_MIN}–${CLIMATE_TEMP_MAX}°C`;
+      tab.onclick = () => { this._tempMode = mode; rerender(); };
+      tabs.appendChild(tab);
+    });
+    wrap.appendChild(tabs);
+
+    const grid = document.createElement("div");
+    grid.className = "ir-temp-grid";
+    const modeLabel = (CLIMATE_TEMP_MODES.find(m => m.mode === current) || {}).label || current;
+    CLIMATE_TEMPS.forEach(t => {
+      let cmd = climateTempCmd(current, t);
+      let label = modeLabel;
+      if (!pills && !learned.has(cmd) && learned.has(`temp_${t}`)) { cmd = `temp_${t}`; label = "Any mode"; }
+      grid.appendChild(makeBtn({ cmd, icon: `${t}°`, label }));
+    });
+    wrap.appendChild(grid);
+    return wrap;
   }
 
   _renderPills() {
@@ -3172,7 +3295,28 @@ ${AR_KEYFRAMES}
     if (!container) return;
     const learned = new Set(this._currentCommands());
     container.innerHTML = "";
-    this._recommendedGroups().forEach(([title, cmds]) => {
+    let tempsRendered = false;
+    this._recommendedGroups().forEach(([title, cmds, meta]) => {
+      if (meta?.tempMode) {
+        // All five per-mode sets collapse into one tabbed "Temperatures" block.
+        if (tempsRendered) return;
+        tempsRendered = true;
+        const section = document.createElement("div");
+        section.className = "ir-pill-group";
+        section.innerHTML = `<div class="ir-pill-group-title">Temperatures — each mode has its own codes</div>`;
+        section.appendChild(this._renderClimateTemps(learned, ({ cmd }) => {
+          const pill = document.createElement("button");
+          pill.type = "button";
+          pill.className = "ir-pill" + (learned.has(cmd) ? " learned" : "")
+            + (cmd === this._justLearned ? " just-learned" : "");
+          pill.textContent = cmd.replace(/^.*_(\d+)$/, "$1°");
+          pill.title = `${cmd} — ${COMMAND_HINTS[cmd] || cmd}`;
+          pill.onclick = () => { this.qs("#ir-cmd").value = cmd; this.qs("#ir-cmd").focus(); };
+          return pill;
+        }, () => this._renderPills(), { pills: true }));
+        container.appendChild(section);
+        return;
+      }
       const section = document.createElement("div");
       section.className = "ir-pill-group";
       section.innerHTML = `<div class="ir-pill-group-title">${title}</div><div class="ir-pill-row"></div>`;
@@ -3184,7 +3328,15 @@ ${AR_KEYFRAMES}
           + (cmd === this._justLearned ? " just-learned" : "");
         pill.textContent = cmd;
         pill.title = COMMAND_HINTS[cmd] || cmd;
-        pill.onclick = () => { this.qs("#ir-cmd").value = cmd; this.qs("#ir-cmd").focus(); };
+        pill.onclick = () => {
+          this.qs("#ir-cmd").value = cmd;
+          this.qs("#ir-cmd").focus();
+          if (CLIMATE_TEMP_MODES.some(m => m.mode === cmd) && this._tempMode !== cmd) {
+            this._tempMode = cmd;
+            this._renderPills();
+            this.qs("#ir-cmd").focus();
+          }
+        };
         row.appendChild(pill);
       });
       container.appendChild(section);
@@ -3277,6 +3429,19 @@ ${AR_KEYFRAMES}
     }
   }
 
+  /** After learning e.g. cool_18, suggest the next unlearned cool temp. */
+  _nextTempCommand(cmdName) {
+    const m = CLIMATE_TEMP_CMD_RE.exec(cmdName || "");
+    if (!m) return "";
+    const learned = new Set(this._currentCommands());
+    this._tempMode = m[1];
+    for (let t = parseInt(m[2], 10) + 1; t <= CLIMATE_TEMP_MAX; t++) {
+      const next = climateTempCmd(m[1], t);
+      if (!learned.has(next)) return next;
+    }
+    return "";
+  }
+
   _renderChecklist() {
     const container = this.qs("#ir-checklist");
     if (!container) return;
@@ -3294,7 +3459,12 @@ ${AR_KEYFRAMES}
         </div>
         <div class="ir-cl-badge">${done ? "✓ Learned" : "Missing"}</div>
       `;
-      if (!done) item.onclick = () => { this.qs("#ir-cmd").value = cmd; this._setStep(3); };
+      if (!done) item.onclick = () => {
+        const m = CLIMATE_TEMP_CMD_RE.exec(cmd);
+        if (m) this._tempMode = m[1];
+        this.qs("#ir-cmd").value = cmd;
+        this._setStep(3);
+      };
       container.appendChild(item);
     });
     this._updateStats(learned);

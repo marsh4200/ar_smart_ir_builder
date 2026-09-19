@@ -109,7 +109,12 @@ def _build_climate(
             "Climate export needs an 'off' command, but none was learned."
         )
 
-    fan_modes = _prefixed_values(commands, "fan_") or ["auto"]
+    # fan_only / fan_only_NN are an HVAC mode + its temp codes, not a speed.
+    learned_fans = [
+        f for f in _prefixed_values(commands, "fan_")
+        if f != "only" and not f.startswith("only_")
+    ]
+    fan_modes = learned_fans or ["auto"]
     swing_modes = _prefixed_values(commands, "swing_")
 
     modes = [
@@ -178,14 +183,14 @@ def _build_climate(
 
     report: dict[str, Any] = {}
     notes: list[str] = []
-    if not _prefixed_values(commands, "fan_"):
+    if not learned_fans:
         notes.append("No fan_* commands learned; used a single 'auto' fan mode.")
     if temps == set():
         notes.append(
             f"No temperature commands found; mapped bare mode codes to "
             f"{_DEFAULT_TEMP}°C."
         )
-    if _prefixed_values(commands, "fan_"):
+    if learned_fans:
         notes.append(
             "Fan is a separate button on this remote, so the same temp code is "
             "reused across fan modes — changing fan speed in ar_smart_ir won't "
