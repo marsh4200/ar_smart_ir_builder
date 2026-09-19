@@ -5,7 +5,7 @@
 // the OS reduced-motion setting with no way to say otherwise).
 
 const MOTION_PREF_KEY = "ar_smart_ir_builder.motion";
-const PANEL_BUILD = "2.13.0";
+const PANEL_BUILD = "2.13.1";
 const AR_KEYFRAMES = `
 @keyframes ir-spin { to { transform: rotate(360deg); } }
 @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -97,11 +97,13 @@ const CLIMATE_TEMP_CMD_RE = /^(cool|heat|dry|auto|fan_only)_(\d{2})$/;
 
 const RECOMMENDED = {
   climate: [
-    ["Modes", ["off", "cool", "heat", "dry", "auto", "fan_only"]],
-    // One group per mode; the third element marks it as a per-mode
-    // temperature set so the learn step can show it as a tab, not a wall.
+    ["Power", ["off"]],
+    // One group per mode: the mode button first, then that mode's own
+    // 16–30°C codes. Learn order = cool, cool_16..cool_30, heat,
+    // heat_16..heat_30, ... The third element marks it as a per-mode set so
+    // the learn step shows it as a tab, not a wall.
     ...CLIMATE_TEMP_MODES.map(({ mode, label }) => [
-      `${label} temperatures`, CLIMATE_TEMPS.map(t => climateTempCmd(mode, t)), { tempMode: mode },
+      `${label} mode`, [mode, ...CLIMATE_TEMPS.map(t => climateTempCmd(mode, t))], { tempMode: mode },
     ]),
     ["Temperature step", ["temp_up","temp_down"]],
     ["Fan speed", ["fan_low","fan_medium","fan_high","fan_auto"]],
@@ -1185,6 +1187,12 @@ ${AR_KEYFRAMES}
   }
   .ir-tmode-tab .ir-tmode-count { font-weight: 600; opacity: .75; margin-left: 5px; font-size: 11px; }
   .ir-tmode-tab.complete:not(.active) { border-color: rgba(26,153,107,.5); }
+  .ir-temp-step { font-size: 12px; font-weight: 600; color: var(--secondary-text-color); margin: 4px 0 8px; display: flex; align-items: center; gap: 7px; }
+  .ir-temp-step-n {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 800;
+    background: var(--primary-color); color: var(--text-primary-color, #fff);
+  }
   .ir-temp-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; }
   .ir-temp-grid .ir-pill { padding: 7px 4px; text-align: center; }
   .ir-remote-temps { margin: 4px 0 12px; }
@@ -1660,7 +1668,7 @@ ${AR_KEYFRAMES}
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.14.0</div>
+      <div class="ir-version">v1.14.1</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -3265,17 +3273,36 @@ ${AR_KEYFRAMES}
     const tabs = document.createElement("div");
     tabs.className = "ir-tmode-tabs";
     CLIMATE_TEMP_MODES.forEach(({ mode, label, icon }) => {
-      const have = CLIMATE_TEMPS.filter(t => learned.has(climateTempCmd(mode, t))).length;
+      const total = CLIMATE_TEMPS.length + 1; // mode button + temps
+      const have = (learned.has(mode) ? 1 : 0)
+        + CLIMATE_TEMPS.filter(t => learned.has(climateTempCmd(mode, t))).length;
       const tab = document.createElement("button");
       tab.type = "button";
       tab.className = "ir-tmode-tab" + (mode === current ? " active" : "")
-        + (have === CLIMATE_TEMPS.length ? " complete" : "");
-      tab.innerHTML = `${icon} ${label}<span class="ir-tmode-count">${have}/${CLIMATE_TEMPS.length}</span>`;
+        + (have === total ? " complete" : "");
+      tab.innerHTML = `${icon} ${label}<span class="ir-tmode-count">${have}/${total}</span>`;
       tab.title = `${label} temperatures ${CLIMATE_TEMP_MIN}–${CLIMATE_TEMP_MAX}°C`;
       tab.onclick = () => { this._tempMode = mode; rerender(); };
       tabs.appendChild(tab);
     });
     wrap.appendChild(tabs);
+
+    if (pills) {
+      const cur = CLIMATE_TEMP_MODES.find(m => m.mode === current) || {};
+      const step1 = document.createElement("div");
+      step1.className = "ir-temp-step";
+      step1.innerHTML = `<span class="ir-temp-step-n">1</span> Learn the ${cur.label || current} mode button`;
+      const modeRow = document.createElement("div");
+      modeRow.className = "ir-pill-row";
+      modeRow.style.marginBottom = "12px";
+      modeRow.appendChild(makeBtn({ cmd: current, icon: cur.icon, label: current }));
+      const step2 = document.createElement("div");
+      step2.className = "ir-temp-step";
+      step2.innerHTML = `<span class="ir-temp-step-n">2</span> Then every ${cur.label || current} temperature, ${CLIMATE_TEMP_MIN}→${CLIMATE_TEMP_MAX}°C (set the remote to ${cur.label || current} + that temp, then press)`;
+      wrap.appendChild(step1);
+      wrap.appendChild(modeRow);
+      wrap.appendChild(step2);
+    }
 
     const grid = document.createElement("div");
     grid.className = "ir-temp-grid";
@@ -3303,7 +3330,7 @@ ${AR_KEYFRAMES}
         tempsRendered = true;
         const section = document.createElement("div");
         section.className = "ir-pill-group";
-        section.innerHTML = `<div class="ir-pill-group-title">Temperatures — each mode has its own codes</div>`;
+        section.innerHTML = `<div class="ir-pill-group-title">Modes &amp; temperatures — each mode has its own codes</div>`;
         section.appendChild(this._renderClimateTemps(learned, ({ cmd }) => {
           const pill = document.createElement("button");
           pill.type = "button";
@@ -3429,15 +3456,24 @@ ${AR_KEYFRAMES}
     }
   }
 
-  /** After learning e.g. cool_18, suggest the next unlearned cool temp. */
+  /**
+   * Guided climate learn order: cool → cool_16..cool_30 → heat →
+   * heat_16..heat_30 → dry → ... After each learn, pre-fill the next
+   * unlearned command in that order and switch the tab to its mode. Only
+   * applies to discrete-style climate profiles.
+   */
   _nextTempCommand(cmdName) {
-    const m = CLIMATE_TEMP_CMD_RE.exec(cmdName || "");
-    if (!m) return "";
+    if (this._effectiveType() !== "climate") return "";
+    const seq = CLIMATE_TEMP_MODES.flatMap(({ mode }) =>
+      [mode, ...CLIMATE_TEMPS.map(t => climateTempCmd(mode, t))]);
+    const idx = seq.indexOf(cmdName || "");
+    if (idx < 0) return "";
     const learned = new Set(this._currentCommands());
-    this._tempMode = m[1];
-    for (let t = parseInt(m[2], 10) + 1; t <= CLIMATE_TEMP_MAX; t++) {
-      const next = climateTempCmd(m[1], t);
-      if (!learned.has(next)) return next;
+    for (let i = idx + 1; i < seq.length; i++) {
+      if (learned.has(seq[i])) continue;
+      const m = CLIMATE_TEMP_CMD_RE.exec(seq[i]);
+      this._tempMode = m ? m[1] : seq[i];
+      return seq[i];
     }
     return "";
   }
@@ -3462,6 +3498,7 @@ ${AR_KEYFRAMES}
       if (!done) item.onclick = () => {
         const m = CLIMATE_TEMP_CMD_RE.exec(cmd);
         if (m) this._tempMode = m[1];
+        else if (CLIMATE_TEMP_MODES.some(x => x.mode === cmd)) this._tempMode = cmd;
         this.qs("#ir-cmd").value = cmd;
         this._setStep(3);
       };
