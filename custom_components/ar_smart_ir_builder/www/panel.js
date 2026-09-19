@@ -5,7 +5,7 @@
 // the OS reduced-motion setting with no way to say otherwise).
 
 const MOTION_PREF_KEY = "ar_smart_ir_builder.motion";
-const PANEL_BUILD = "2.13.3";
+const PANEL_BUILD = "2.13.4";
 const AR_KEYFRAMES = `
 @keyframes ir-spin { to { transform: rotate(360deg); } }
 @keyframes ir-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
@@ -1173,6 +1173,12 @@ ${AR_KEYFRAMES}
     box-shadow: 0 1px 8px -3px rgba(26,153,107,.5);
   }
 
+  .ir-cmd-target { font-size: 12px; margin: 8px 2px 0; color: var(--secondary-text-color); min-height: 16px; }
+  .ir-cmd-target b { color: var(--primary-text-color); }
+  .ir-cmd-target.overwrite { color: #c0392b; font-weight: 600; }
+  .ir-pill.target { outline: 2px solid var(--primary-color); outline-offset: 1px; }
+  .ir-rbtn.mode-active { border-color: var(--primary-color); box-shadow: 0 0 0 2px var(--primary-color) inset; }
+
   /* Per-mode temperature tabs + grid */
   .ir-tmode-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
   .ir-tmode-tab {
@@ -1668,7 +1674,7 @@ ${AR_KEYFRAMES}
     <div class="ir-header-icon">📡</div>
     <div>
       <h1>AR Smart IR Builder</h1>
-      <div class="ir-version">v1.14.3</div>
+      <div class="ir-version">v1.14.4</div>
     </div>
     <select id="ir-entry" class="ir-remote-select" title="Select remote"></select>
   </div>
@@ -1904,6 +1910,7 @@ ${AR_KEYFRAMES}
         <button class="ir-btn ir-btn-primary" id="ir-learn-btn" style="flex-shrink:0;margin-bottom:0">Learn</button>
         <button class="ir-btn ir-btn-secondary" id="ir-paste-btn" style="flex-shrink:0;margin-bottom:0" title="Paste a Base64 code instead of capturing">Paste code</button>
       </div>
+      <div class="ir-cmd-target" id="ir-cmd-target"></div>
 
       <div id="ir-paste-card" class="ir-callout" style="display:none;margin-top:8px">
         <div style="font-weight:600;margin-bottom:6px">Paste Base64 code for "<span id="ir-paste-cmd-label">—</span>"</div>
@@ -2130,6 +2137,7 @@ ${AR_KEYFRAMES}
     this.qs("#ir-back-to-2").onclick = () => this._setStep(2);
     this.qs("#ir-to-test").onclick = () => this._setStep(4);
     this.qs("#ir-cmd").addEventListener("keydown", e => { if (e.key === "Enter") this._learnCommand(); });
+    this.qs("#ir-cmd").addEventListener("input", () => { this._overwriteArmed = null; this._updateCmdTarget(); });
 
     // Step 3 — Repeat / Retry editor
     this.qs("#ir-rep-add-btn").onclick = () => this._addRepeatRow();
@@ -2363,6 +2371,15 @@ ${AR_KEYFRAMES}
     if (!cmdName) { this._showLearnCallout("Enter a command name first.", "error"); return; }
     if (!key) { this._showCallout("Save a profile first.", "error"); this._setStep(2); return; }
     if (!entryId) { this._showCallout("Select a remote entry.", "error"); return; }
+    // Never silently overwrite an already-learned code: first press warns,
+    // second press on the same name confirms.
+    if (this._currentCommands().includes(cmdName) && this._overwriteArmed !== cmdName) {
+      this._overwriteArmed = cmdName;
+      this._showLearnCallout(`"${cmdName}" is already learned. Press Learn again to OVERWRITE it — or pick another button.`, "warning");
+      this._updateCmdTarget();
+      return;
+    }
+    this._overwriteArmed = null;
     await this._run(async () => {
       await this._hass.callService("ar_smart_ir_builder", "save_device", this._profilePayload());
       let prompt;
@@ -2855,7 +2872,18 @@ ${AR_KEYFRAMES}
     btn.className = `ir-rbtn ${defCls} ${extraCls} ${has ? "" : "missing"}`.trim();
     btn.title = has ? `Fire: ${cmd}` : `${cmd} — not learned yet`;
     btn.innerHTML = `<span>${icon}</span><span class="ir-rbtn-label">${label}</span>`;
-    if (has) {
+    const isMode = CLIMATE_TEMP_MODES.some(m => m.mode === cmd);
+    if (isMode && cmd === (this._tempMode || "cool")) btn.classList.add("mode-active");
+    if (isMode) {
+      // COOL / HEAT / DRY also switch the temperature grid to that mode, so
+      // pressing HEAT then 16 fires heat_16 — like the real remote.
+      btn.style.cursor = "pointer";
+      btn.onclick = async () => {
+        if (has) await this._testCommandDirect(cmd, btn);
+        this._tempMode = cmd;
+        this._renderTestRemote();
+      };
+    } else if (has) {
       btn.onclick = () => this._testCommandDirect(cmd, btn);
     }
     return btn;
@@ -3321,7 +3349,18 @@ ${AR_KEYFRAMES}
         + (have === total ? " complete" : "");
       tab.innerHTML = `${icon} ${label}<span class="ir-tmode-count">${have}/${total}</span>`;
       tab.title = `${label} temperatures ${CLIMATE_TEMP_MIN}–${CLIMATE_TEMP_MAX}°C`;
-      tab.onclick = () => { this._tempMode = mode; rerender(); };
+      tab.onclick = () => {
+        this._tempMode = mode;
+        if (pills) {
+          // Switching mode = start filling THAT mode's codes. Never leave the
+          // previous mode's name in the box (that overwrote cool codes while
+          // the Heat tab was showing).
+          const cmdEl = this.qs("#ir-cmd");
+          if (cmdEl) cmdEl.value = this._firstUnlearnedForMode(mode);
+          this._overwriteArmed = null;
+        }
+        rerender();
+      };
       tabs.appendChild(tab);
     });
     wrap.appendChild(tabs);
@@ -3375,9 +3414,10 @@ ${AR_KEYFRAMES}
           pill.type = "button";
           pill.className = "ir-pill" + (learned.has(cmd) ? " learned" : "")
             + (cmd === this._justLearned ? " just-learned" : "");
+          pill.dataset.cmd = cmd;
           pill.textContent = cmd.replace(/^.*_(\d+)$/, "$1°");
           pill.title = `${cmd} — ${COMMAND_HINTS[cmd] || cmd}`;
-          pill.onclick = () => { this.qs("#ir-cmd").value = cmd; this.qs("#ir-cmd").focus(); };
+          pill.onclick = () => { this.qs("#ir-cmd").value = cmd; this._overwriteArmed = null; this._updateCmdTarget(); this.qs("#ir-cmd").focus(); };
           return pill;
         }, () => this._renderPills(), { pills: true }));
         container.appendChild(section);
@@ -3392,10 +3432,13 @@ ${AR_KEYFRAMES}
         pill.type = "button";
         pill.className = "ir-pill" + (learned.has(cmd) ? " learned" : "")
           + (cmd === this._justLearned ? " just-learned" : "");
+        pill.dataset.cmd = cmd;
         pill.textContent = cmd;
         pill.title = COMMAND_HINTS[cmd] || cmd;
         pill.onclick = () => {
           this.qs("#ir-cmd").value = cmd;
+          this._overwriteArmed = null;
+          this._updateCmdTarget();
           this.qs("#ir-cmd").focus();
           if (CLIMATE_TEMP_MODES.some(m => m.mode === cmd) && this._tempMode !== cmd) {
             this._tempMode = cmd;
@@ -3409,6 +3452,7 @@ ${AR_KEYFRAMES}
     });
     this._justLearned = null;
     this._updateStats(learned);
+    this._updateCmdTarget();
 
     const dl = this.qs("#ir-cmd-list");
     dl.innerHTML = "";
@@ -3495,6 +3539,29 @@ ${AR_KEYFRAMES}
     }
   }
 
+  /** Mode button first, then 16..30 — the first one of THIS mode not yet learned. */
+  _firstUnlearnedForMode(mode) {
+    const learned = new Set(this._currentCommands());
+    const seq = [mode, ...CLIMATE_TEMPS.map(t => climateTempCmd(mode, t))];
+    return seq.find(c => !learned.has(c)) || "";
+  }
+
+  /** "Will save as: heat_16 (Heat mode at 16°C)" under the command box. */
+  _updateCmdTarget() {
+    const el = this.qs("#ir-cmd-target");
+    if (!el) return;
+    const cmd = (this.qs("#ir-cmd")?.value || "").trim();
+    this.querySelectorAll(".ir-pill.target").forEach(p => p.classList.remove("target"));
+    if (!cmd) { el.className = "ir-cmd-target"; el.textContent = ""; return; }
+    const exists = this._currentCommands().includes(cmd);
+    el.className = "ir-cmd-target" + (exists ? " overwrite" : "");
+    const hint = COMMAND_HINTS[cmd] ? ` (${COMMAND_HINTS[cmd]})` : "";
+    el.innerHTML = exists
+      ? `⚠ Will OVERWRITE: <b>${cmd}</b>${hint} — already learned`
+      : `Next learn saves as: <b>${cmd}</b>${hint}`;
+    this.querySelectorAll(".ir-pill").forEach(p => { if (p.dataset.cmd === cmd) p.classList.add("target"); });
+  }
+
   /**
    * Guided climate learn order: cool → cool_16..cool_30 → heat →
    * heat_16..heat_30 → dry → ... After each learn, pre-fill the next
@@ -3503,18 +3570,13 @@ ${AR_KEYFRAMES}
    */
   _nextTempCommand(cmdName) {
     if (this._effectiveType() !== "climate") return "";
-    const seq = CLIMATE_TEMP_MODES.flatMap(({ mode }) =>
-      [mode, ...CLIMATE_TEMPS.map(t => climateTempCmd(mode, t))]);
-    const idx = seq.indexOf(cmdName || "");
-    if (idx < 0) return "";
-    const learned = new Set(this._currentCommands());
-    for (let i = idx + 1; i < seq.length; i++) {
-      if (learned.has(seq[i])) continue;
-      const m = CLIMATE_TEMP_CMD_RE.exec(seq[i]);
-      this._tempMode = m ? m[1] : seq[i];
-      return seq[i];
-    }
-    return "";
+    // Stay inside the mode just learned: cool -> cool_16 -> ... -> cool_30,
+    // then stop. Moving on to Heat is always your click on the Heat tab.
+    const m = CLIMATE_TEMP_CMD_RE.exec(cmdName || "");
+    const mode = m ? m[1] : (CLIMATE_TEMP_MODES.some(x => x.mode === cmdName) ? cmdName : null);
+    if (!mode) return "";
+    this._tempMode = mode;
+    return this._firstUnlearnedForMode(mode);
   }
 
   _renderChecklist() {

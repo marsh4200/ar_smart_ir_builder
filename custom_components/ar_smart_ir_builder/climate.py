@@ -41,7 +41,7 @@ from .storage import ARSmartIRStore, normalize_device
 _LOGGER = logging.getLogger(__name__)
 # Shown on the entity as `builder_version` so it's obvious from Developer
 # Tools whether Home Assistant was actually restarted onto this code.
-BUILDER_VERSION = "1.14.3"
+BUILDER_VERSION = "1.14.4"
 MODE_TEMP_RE = re.compile(r"^(auto|cool|dry|fan_only|heat)_(\d{2})$")
 
 CLIMATE_DEVICE_TYPES = {"climate", "ac", "aircon", "air_conditioner"}
